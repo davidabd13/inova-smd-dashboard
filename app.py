@@ -34,7 +34,7 @@ if df_raw.empty:
     st.error("❌ Data dari database 'sellinbysku' kosong atau gagal terhubung. Periksa pengaturan jaringan atau kredensial Supabase Anda.")
     st.stop()
 
-# Gunakan copy murni untuk menghindari mutasi referensi data asal
+# Gunakan salinan independen total untuk menghindari pencemaran memori antar-run Streamlit
 df_proc = df_raw.copy()
 
 # ─── BULLETPROOF COLUMN RESOLVER (ANTI-KEYERROR LOGIKA BISNIS) ───────────────
@@ -80,6 +80,7 @@ df_proc[month_col] = pd.to_numeric(df_proc[month_col], errors='coerce').fillna(1
 df_proc[value_metric_col] = pd.to_numeric(df_proc[value_metric_col], errors='coerce').fillna(0.0)
 df_proc[qty_metric_col] = pd.to_numeric(df_proc[qty_metric_col], errors='coerce').fillna(0.0)
 
+# Pastikan pembersihan teks dilakukan menyeluruh untuk menghindari duplikasi grup item akibat leading/trailing space
 df_proc[category_col] = df_proc[category_col].fillna("WOUND").astype(str).str.strip().str.upper()
 df_proc[sku_col] = df_proc[sku_col].fillna("UNASSIGNED").astype(str).str.strip()
 
@@ -117,107 +118,32 @@ period_key_to_name_dict = dict(zip(list_periods_3m_keys, list_periods_3m_names))
 
 df_proc['Period_Str'] = df_proc.apply(lambda r: f"{int(r[year_col])}-{str(int(r[month_col])).zfill(2)}", axis=1)
 
-# Ambil data murni slice dasar agar filter operasional berjalan konsisten
+# Mengambil slice murni berdasarkan target 3 bulan terpilih
 df_trend_base = df_proc[df_proc['Period_Str'].isin(list_periods_3m_keys)].copy()
 
-# Filter Tambahan Operasional
+# Filter Tambahan Operasional (Logika Diperbaiki: Menggunakan Kloning Lokal Murni Tanpa Mutasi Induk)
 st.sidebar.header("⚙️ Filter Operasional")
 def apply_sidebar_filter(df, column_name, label, all_label):
-    # Mengisi NaN sementara secara lokal tanpa merusak struktur grouping asli
-    temp_series = df[column_name].fillna("UNASSIGNED").astype(str).str.strip()
-    options = [all_label] + sorted([x for x in temp_series.unique() if x != "UNASSIGNED"])
+    temp_df = df.copy()
+    temp_df[column_name] = temp_df[column_name].fillna("UNASSIGNED").astype(str).str.strip()
+    options = [all_label] + sorted([x for x in temp_df[column_name].unique() if x != "UNASSIGNED"])
     selected = st.sidebar.selectbox(label, options, index=0)
     if selected == all_label:
         return df
     else:
-        return df[df[column_name].fillna("UNASSIGNED").astype(str).str.strip() == selected]
-
-df_trend_base = apply_sidebar_filter(df_trend_base, abm_field, "ABM / KAM Representative", "All ABM/KAM")
-df_trend_base = apply_sidebar_filter(df_trend_base, spv_col, "SPV Region", "All SPV Regions")
-df_trend_base = apply_sidebar_filter(df_trend_base, region_field, "Region / Branch", "All Regions")
-df_trend_base = apply_sidebar_filter(df_trend_base, channel_field, "Channel Level 1", "All Channels")
-df_trend_base = apply_sidebar_filter(df_trend_base, sku_col, "Product SKU Filter", "All SKUs")
-df_trend_base = apply_sidebar_filter(df_trend_base, outlet_col, "Outlet Name", "All Outlets")
-df_trend_base = apply_sidebar_filter(df_trend_base, smd_col, "Kode SMD", "All SMD Codes")
+        return df[df[column_name].fillna("UNASSIGNED").astype(str).str.strip() == selected].copy()
 
 df_filtered_trend = df_trend_base.copy()
+df_filtered_trend = apply_sidebar_filter(df_filtered_trend, abm_field, "ABM / KAM Representative", "All ABM/KAM")
+df_filtered_trend = apply_sidebar_filter(df_filtered_trend, spv_col, "SPV Region", "All SPV Regions")
+df_filtered_trend = apply_sidebar_filter(df_filtered_trend, region_field, "Region / Branch", "All Regions")
+df_filtered_trend = apply_sidebar_filter(df_filtered_trend, channel_field, "Channel Level 1", "All Channels")
+df_filtered_trend = apply_sidebar_filter(df_filtered_trend, sku_col, "Product SKU Filter", "All SKUs")
+df_filtered_trend = apply_sidebar_filter(df_filtered_trend, outlet_col, "Outlet Name", "All Outlets")
+df_filtered_trend = apply_sidebar_filter(df_filtered_trend, smd_col, "Kode SMD", "All SMD Codes")
 
 # ─── MAIN DISPLAY MATRIX AREA ────────────────────────────────────────────────
 st.subheader("📋 Matriks Pivot Performa Produk (3 Bulan Rolling)")
 st.caption(f"Rentang waktu aktif analisis saat ini: **{list_periods_3m_names[0]}** s/d **{list_periods_3m_names[-1]}**")
 
-# Kontrol Perspektif Perhitungan & Kategori
-col_ctrl1, col_ctrl2 = st.columns(2)
-with col_ctrl1:
-    chosen_metric_label = st.radio("Perspektif Penghitungan:", ["SUM OF VALUE", "SUM OF QTY"], index=0, horizontal=True)
-    active_ims_col = value_metric_col if chosen_metric_label == "SUM OF VALUE" else qty_metric_col
-    prefix_unit = "Rp " if chosen_metric_label == "SUM OF VALUE" else ""
-
-with col_ctrl2:
-    available_categories = ["All Categories"] + sorted(list(df_filtered_trend[category_col].unique()))
-    selected_category = st.selectbox("Filter Kategori Produk", available_categories, index=0)
-    if selected_category != "All Categories":
-        df_filtered_trend = df_filtered_trend[df_filtered_trend[category_col] == selected_category]
-
-df_filtered_trend['Period_Formatted'] = df_filtered_trend['Period_Str'].map(period_key_to_name_dict)
-
-if not df_filtered_trend.empty:
-    # Pembentukan Pivot Table Berdasarkan Nama Kolom yang Jelas
-    df_pivot = df_filtered_trend.pivot_table(
-        index=[sku_col, category_col],
-        columns='Period_Formatted',
-        values=active_ims_col,
-        aggfunc='sum',
-        fill_value=0.0
-    ).reset_index()
-    
-    # Memastikan urutan kolom presisi menggunakan .reindex() yang aman
-    df_pivot = df_pivot.reindex(columns=[sku_col, category_col] + list_periods_3m_names, fill_value=0.0)
-    
-    # Memberikan nama header teknis yang seragam untuk visualisasi
-    df_pivot.columns = ["PRODUCT SKU NAME", "CATEGORY"] + list_periods_3m_names
-    
-    label_total_header = f"TOTAL AMOUNT ({chosen_metric_label})"
-    df_pivot[label_total_header] = df_pivot[list_periods_3m_names].sum(axis=1)
-    df_pivot = df_pivot.sort_values(by=label_total_header, ascending=False)
-    
-    # PERBAIKAN LOGIKA UTAMA: Membuat baris total murni dari sum data awal produk, 
-    # diisolasi agar tidak mengontaminasi baris item produk saat re-render filter.
-    total_row_dict = {"PRODUCT SKU NAME": "TOTAL SUMMARY", "CATEGORY": "ALL CATEGORIES"}
-    for p_name in list_periods_3m_names:
-        total_row_dict[p_name] = df_pivot[p_name].sum()
-    total_row_dict[label_total_header] = df_pivot[label_total_header].sum()
-    
-    # Menggabungkan baris total summary dengan aman ke dataframe visual akhir
-    df_pivot_final = pd.concat([df_pivot, pd.DataFrame([total_row_dict])], ignore_index=True)
-    format_rules = {col: f"{prefix_unit}{{:,.0f}}" for col in list_periods_3m_names + [label_total_header]}
-    
-    # Custom CSS khusus untuk rendering dataframe agar rapi dan kontras tinggi
-    st.markdown(
-        f"""
-        <style>
-            div[data-testid=\"stDataFrame\"] table {{ background-color: #FFFFFF !important; color: #1E293B !important; }}
-            div[data-testid=\"stDataFrame\"] th {{ background-color: {SECONDARY} !important; color: #FFFFFF !important; font-weight: 700 !important; }}
-        </style>
-        """, 
-        unsafe_allow_html=True
-    )
-    
-    st.dataframe(df_pivot_final.style.format(format_rules), use_container_width=True, hide_index=True)
-    
-    # Fitur Download Laporan Excel Ekspor
-    col_space, col_btn = st.columns([8, 2])
-    with col_btn:
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df_pivot_final.to_excel(writer, index=False, sheet_name='3M_Sales_Matrix')
-        st.download_button(
-            label="📥 Download Pivot Report (Excel)",
-            data=output.getvalue(),
-            file_name=f"Actual_Performance_3M_{chosen_metric_label.replace(' ', '_')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-else:
-    st.warning("⚠️ Tidak ada riwayat transaksi yang cocok dengan kombinasi filter saat ini.")
-
-render_footer()
+#
