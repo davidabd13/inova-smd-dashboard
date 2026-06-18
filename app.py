@@ -47,7 +47,6 @@ def find_column_safely(possible_names, default_name, fallback_fill_value=None):
     if fallback_fill_value is not None:
         df_proc[default_name] = fallback_fill_value
     else:
-        # Jika tidak ketemu, cari apakah ada kolom pertama yang bertipe numerik untuk metrik
         df_proc[default_name] = 0.0
     return default_name
 
@@ -65,7 +64,7 @@ abm_field = find_column_safely(["ABM / KAM", "ABM", "KAM", "abm", "kam"], "ABM /
 region_field = find_column_safely(["DISTRIBUTOR BRANCH", "BRANCH", "WILAYAH", "branch", "region"], "Distributor Branch")
 channel_field = find_column_safely(["CHANNEL LEVEL 1", "CHANNEL", "channel"], "CHANNEL LEVEL 1")
 
-# Resolving Kolom Metrik Angka (Menangani penamaan lowercase/snake_case Supabase)
+# Resolving Kolom Metrik Angka
 value_metric_col = find_column_safely(["SUM OF VALUE", "sum_of_value", "ACTUAL VALUE", "TOTAL_SALES", "VALUE", "value"], "Sum of Value")
 qty_metric_col = find_column_safely(["SUM OF QTY", "sum_of_qty", "ACTUAL QTY", "TOTAL_QTY", "QTY", "qty"], "Sum of Qty")
 
@@ -156,7 +155,7 @@ with col_ctrl2:
 df_filtered_trend['Period_Formatted'] = df_filtered_trend['Period_Str'].map(period_key_to_name_dict)
 
 if not df_filtered_trend.empty:
-    # Pembentukan Pivot Table
+    # Pembentukan Pivot Table Berdasarkan Nama Kolom yang Jelas
     df_pivot = df_filtered_trend.pivot_table(
         index=[sku_col, category_col],
         columns='Period_Formatted',
@@ -165,13 +164,12 @@ if not df_filtered_trend.empty:
         fill_value=0.0
     ).reset_index()
     
-    for p_name in list_periods_3m_names:
-        if p_name not in df_pivot.columns:
-            df_pivot[p_name] = 0.0
-            
-    ordered_columns = ["PRODUCT SKU NAME", "CATEGORY"] + list_periods_3m_names
-    df_pivot.columns = ["PRODUCT SKU NAME", "CATEGORY"] + list(df_pivot.columns[2:])
-    df_pivot = df_pivot[ordered_columns]
+    # PERBAIKAN LOGIKA: Memastikan urutan kolom presisi menggunakan .reindex() yang aman
+    # Cara ini menjamin data terpetakan secara sempurna ke kolom bulan yang tepat
+    df_pivot = df_pivot.reindex(columns=[sku_col, category_col] + list_periods_3m_names, fill_value=0.0)
+    
+    # Memberikan nama header teknis yang seragam untuk visualisasi
+    df_pivot.columns = ["PRODUCT SKU NAME", "CATEGORY"] + list_periods_3m_names
     
     label_total_header = f"TOTAL AMOUNT ({chosen_metric_label})"
     df_pivot[label_total_header] = df_pivot[list_periods_3m_names].sum(axis=1)
