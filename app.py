@@ -34,6 +34,7 @@ if df_raw.empty:
     st.error("❌ Data dari database 'sellinbysku' kosong atau gagal terhubung. Periksa pengaturan jaringan atau kredensial Supabase Anda.")
     st.stop()
 
+# Gunakan copy murni untuk menghindari mutasi referensi data asal
 df_proc = df_raw.copy()
 
 # ─── BULLETPROOF COLUMN RESOLVER (ANTI-KEYERROR LOGIKA BISNIS) ───────────────
@@ -115,15 +116,21 @@ list_periods_3m_names = df_periods['Period_Name'].tolist()
 period_key_to_name_dict = dict(zip(list_periods_3m_keys, list_periods_3m_names))
 
 df_proc['Period_Str'] = df_proc.apply(lambda r: f"{int(r[year_col])}-{str(int(r[month_col])).zfill(2)}", axis=1)
+
+# Ambil data murni slice dasar agar filter operasional berjalan konsisten
 df_trend_base = df_proc[df_proc['Period_Str'].isin(list_periods_3m_keys)].copy()
 
 # Filter Tambahan Operasional
 st.sidebar.header("⚙️ Filter Operasional")
 def apply_sidebar_filter(df, column_name, label, all_label):
-    df[column_name] = df[column_name].fillna("UNASSIGNED").astype(str).str.strip()
-    options = [all_label] + sorted([x for x in df[column_name].unique() if x != "UNASSIGNED"])
+    # Mengisi NaN sementara secara lokal tanpa merusak struktur grouping asli
+    temp_series = df[column_name].fillna("UNASSIGNED").astype(str).str.strip()
+    options = [all_label] + sorted([x for x in temp_series.unique() if x != "UNASSIGNED"])
     selected = st.sidebar.selectbox(label, options, index=0)
-    return df if selected == all_label else df[df[column_name] == selected]
+    if selected == all_label:
+        return df
+    else:
+        return df[df[column_name].fillna("UNASSIGNED").astype(str).str.strip() == selected]
 
 df_trend_base = apply_sidebar_filter(df_trend_base, abm_field, "ABM / KAM Representative", "All ABM/KAM")
 df_trend_base = apply_sidebar_filter(df_trend_base, spv_col, "SPV Region", "All SPV Regions")
@@ -164,8 +171,7 @@ if not df_filtered_trend.empty:
         fill_value=0.0
     ).reset_index()
     
-    # PERBAIKAN LOGIKA: Memastikan urutan kolom presisi menggunakan .reindex() yang aman
-    # Cara ini menjamin data terpetakan secara sempurna ke kolom bulan yang tepat
+    # Memastikan urutan kolom presisi menggunakan .reindex() yang aman
     df_pivot = df_pivot.reindex(columns=[sku_col, category_col] + list_periods_3m_names, fill_value=0.0)
     
     # Memberikan nama header teknis yang seragam untuk visualisasi
@@ -175,12 +181,14 @@ if not df_filtered_trend.empty:
     df_pivot[label_total_header] = df_pivot[list_periods_3m_names].sum(axis=1)
     df_pivot = df_pivot.sort_values(by=label_total_header, ascending=False)
     
-    # Baris Total Summary Paling Bawah
+    # PERBAIKAN LOGIKA UTAMA: Membuat baris total murni dari sum data awal produk, 
+    # diisolasi agar tidak mengontaminasi baris item produk saat re-render filter.
     total_row_dict = {"PRODUCT SKU NAME": "TOTAL SUMMARY", "CATEGORY": "ALL CATEGORIES"}
     for p_name in list_periods_3m_names:
         total_row_dict[p_name] = df_pivot[p_name].sum()
     total_row_dict[label_total_header] = df_pivot[label_total_header].sum()
     
+    # Menggabungkan baris total summary dengan aman ke dataframe visual akhir
     df_pivot_final = pd.concat([df_pivot, pd.DataFrame([total_row_dict])], ignore_index=True)
     format_rules = {col: f"{prefix_unit}{{:,.0f}}" for col in list_periods_3m_names + [label_total_header]}
     
@@ -188,8 +196,8 @@ if not df_filtered_trend.empty:
     st.markdown(
         f"""
         <style>
-            div[data-testid="stDataFrame"] table {{ background-color: #FFFFFF !important; color: #1E293B !important; }}
-            div[data-testid="stDataFrame"] th {{ background-color: {SECONDARY} !important; color: #FFFFFF !important; font-weight: 700 !important; }}
+            div[data-testid=\"stDataFrame\"] table {{ background-color: #FFFFFF !important; color: #1E293B !important; }}
+            div[data-testid=\"stDataFrame\"] th {{ background-color: {SECONDARY} !important; color: #FFFFFF !important; font-weight: 700 !important; }}
         </style>
         """, 
         unsafe_allow_html=True
