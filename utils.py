@@ -14,14 +14,10 @@ SECONDARY   = "#002F6C"  # Deep Corporate Blue
 LIGHT_GRAY  = "#F8FAFC"  # Clean card backgrounds
 WHITE       = "#FFFFFF"
 
+# Mapping opsional, jika nama kolom di DB sudah sesuai legasi, program utama akan otomatis mencocokkannya
 MAP_SKU_DISPLAY = {
-    "no": "NO",
-    "category": "CATEGORY",
-    "sub_category": "SUB CATEGORY",
-    "brand": "BRAND",
-    "sku_name": "SKU NAME",
-    "total_6_months": "TOTAL 6 MONTHS",
-    "average": "AVERAGE"
+    "sku_name": "PRODUCT SKU NAME",
+    "category": "CATEGORY"
 }
 
 @st.cache_resource
@@ -45,7 +41,6 @@ def load_data_all(worksheet_name: str) -> pd.DataFrame:
     Menarik seluruh data dari Supabase tanpa terpotong batas limit (Mendukung >100.000 baris)
     menggunakan teknik urutan range pagination.
     """
-    # Strategi Fallback File Lokal CSV
     local_file = f"{worksheet_name}.csv"
     if os.path.exists(local_file):
         try:
@@ -68,14 +63,12 @@ def load_data_all(worksheet_name: str) -> pd.DataFrame:
         
     try:
         all_records = []
-        page_size = 1000  # Standar maksimal batas API Supabase per request
+        page_size = 1000  
         start_row = 0
         
-        # Buat placeholder loading bar di Streamlit agar user tahu proses sedang berjalan
         progress_bar = st.progress(0, text="Mengunduh data terintegrasi dari Supabase...")
         
         while True:
-            # Tarik data bertahap menggunakan range (misal: 0-999, 1000-1999, dst)
             response = supabase.table(target_table)\
                                .select("*")\
                                .range(start_row, start_row + page_size - 1)\
@@ -87,31 +80,30 @@ def load_data_all(worksheet_name: str) -> pd.DataFrame:
                 
             all_records.extend(batch_data)
             
-            # Jika baris yang dikembalikan kurang dari page_size, berarti ini halaman terakhir
             if len(batch_data) < page_size:
                 break
                 
             start_row += page_size
             
-            # Update info status baris (Mencegah tampilan membeku)
             if start_row % 5000 == 0:
                 progress_bar.progress(min(start_row / 150000, 0.95), text=f"Sudah mengunduh {start_row:,} baris data...")
                 
-        progress_bar.empty() # Hapus progress bar setelah selesai
+        progress_bar.empty() 
         
         if not all_records:
             return pd.DataFrame()
             
         df = pd.DataFrame(all_records)
         
-        # Bersihkan memori dari kolom tracking internal database
         for ts_col in ['created_at', 'id']:
             if ts_col in df.columns:
                 df.drop(columns=[ts_col], inplace=True)
                 
-        # Lakukan pemetaan nama kolom database ke nama display legasi agar logika lama tidak rusak
         if worksheet_name == "sellinbysku":
-            df.rename(columns=MAP_SKU_DISPLAY, inplace=True)
+            # Ganti kolom yang berpotensi bentrok menggunakan mapping teraman
+            for col_db, col_display in MAP_SKU_DISPLAY.items():
+                if col_db in df.columns:
+                    df.rename(columns={col_db: col_display}, inplace=True)
             
         return df
         
@@ -133,7 +125,6 @@ def inject_css():
         except Exception:
             pass
             
-    # Fallback inline jika file css bermasalah
     st.markdown(
         f"""
         <style>

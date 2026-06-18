@@ -47,26 +47,27 @@ def find_column_safely(possible_names, default_name, fallback_fill_value=None):
     if fallback_fill_value is not None:
         df_proc[default_name] = fallback_fill_value
     else:
-        df_proc[default_name] = "UNASSIGNED"
+        # Jika tidak ketemu, cari apakah ada kolom pertama yang bertipe numerik untuk metrik
+        df_proc[default_name] = 0.0
     return default_name
 
 # Resolving Kolom Waktu & Dimensi Bisnis Utama
-year_col = find_column_safely(["YEAR", "YEAR_NUM", "TAHUN"], "YEAR")
-month_col = find_column_safely(["MONTH", "MONTH_NUM", "BULAN"], "MONTH")
-sku_col = find_column_safely(["INOVA ID SKU NAME", "INOVA_ID_SKU_NAME", "SKU NAME", "SKU_NAME", "PRODUCT SKU NAME"], "iNova ID SKU Name")
-category_col = find_column_safely(["CATEGORY", "KATEGORI", "PRODUCT CATEGORY"], "CATEGORY")
+year_col = find_column_safely(["YEAR", "YEAR_NUM", "TAHUN", "year"], "YEAR")
+month_col = find_column_safely(["MONTH", "MONTH_NUM", "BULAN", "month"], "MONTH")
+sku_col = find_column_safely(["INOVA ID SKU NAME", "INOVA_ID_SKU_NAME", "SKU NAME", "SKU_NAME", "PRODUCT SKU NAME", "sku_name"], "iNova ID SKU Name")
+category_col = find_column_safely(["CATEGORY", "KATEGORI", "PRODUCT CATEGORY", "category"], "CATEGORY")
 
 # Resolving Kolom Operasional Filter
-outlet_col = find_column_safely(["INOVA_ID_CUST_NAME", "OUTLET NAME", "NAMA OUTLET"], "Outlet Name")
-smd_col = find_column_safely(["INOVA_SMD_CODE", "KODE SMD", "SMD CODE"], "Kode SMD")
-spv_col = find_column_safely(["INDO5 TEAM - SPV REGION", "SPV REGION", "REGION"], "SPV Region")
-abm_field = find_column_safely(["ABM / KAM", "ABM", "KAM"], "ABM / KAM")
-region_field = find_column_safely(["DISTRIBUTOR BRANCH", "BRANCH", "WILAYAH"], "Distributor Branch")
-channel_field = find_column_safely(["CHANNEL LEVEL 1", "CHANNEL"], "CHANNEL LEVEL 1")
+outlet_col = find_column_safely(["INOVA_ID_CUST_NAME", "OUTLET NAME", "NAMA OUTLET", "outlet_name"], "Outlet Name")
+smd_col = find_column_safely(["INOVA_SMD_CODE", "KODE SMD", "SMD CODE", "smd_code"], "Kode SMD")
+spv_col = find_column_safely(["INDO5 TEAM - SPV REGION", "SPV REGION", "REGION", "spv_region"], "SPV Region")
+abm_field = find_column_safely(["ABM / KAM", "ABM", "KAM", "abm", "kam"], "ABM / KAM")
+region_field = find_column_safely(["DISTRIBUTOR BRANCH", "BRANCH", "WILAYAH", "branch", "region"], "Distributor Branch")
+channel_field = find_column_safely(["CHANNEL LEVEL 1", "CHANNEL", "channel"], "CHANNEL LEVEL 1")
 
-# Resolving Kolom Metrik Angka
-value_metric_col = find_column_safely(["SUM OF VALUE", "ACTUAL VALUE", "TOTAL_SALES", "VALUE"], "Sum of Value")
-qty_metric_col = find_column_safely(["SUM OF QTY", "ACTUAL QTY", "TOTAL_QTY", "QTY"], "Sum of Qty")
+# Resolving Kolom Metrik Angka (Menangani penamaan lowercase/snake_case Supabase)
+value_metric_col = find_column_safely(["SUM OF VALUE", "sum_of_value", "ACTUAL VALUE", "TOTAL_SALES", "VALUE", "value"], "Sum of Value")
+qty_metric_col = find_column_safely(["SUM OF QTY", "sum_of_qty", "ACTUAL QTY", "TOTAL_QTY", "QTY", "qty"], "Sum of Qty")
 
 # ─── CLEANING & TYPE CONVERSIONS ─────────────────────────────────────────────
 if df_proc[value_metric_col].dtype == object:
@@ -117,7 +118,7 @@ period_key_to_name_dict = dict(zip(list_periods_3m_keys, list_periods_3m_names))
 df_proc['Period_Str'] = df_proc.apply(lambda r: f"{int(r[year_col])}-{str(int(r[month_col])).zfill(2)}", axis=1)
 df_trend_base = df_proc[df_proc['Period_Str'].isin(list_periods_3m_keys)].copy()
 
-# Filter Tambahan Operasional (Logika Bisnis Lama Dipertahankan Penuh)
+# Filter Tambahan Operasional
 st.sidebar.header("⚙️ Filter Operasional")
 def apply_sidebar_filter(df, column_name, label, all_label):
     df[column_name] = df[column_name].fillna("UNASSIGNED").astype(str).str.strip()
