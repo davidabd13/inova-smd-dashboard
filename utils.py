@@ -274,7 +274,7 @@ def sidebar_nav():
         unsafe_allow_html=True
     )
     
-    st.sidebar.page_link("pages/3_Actual_Sales_Performance.py", label="Actual Sales Performance", icon="📈")
+    st.sidebar.page_link("pages/1_Actual_Sales_Performance.py", label="Actual Sales Performance", icon="📈")
     st.sidebar.page_link("pages/4_Active_Outlet.py", label="Active Outlet Analysis", icon="🏬")
     st.sidebar.page_link("pages/5_Leaderboard.py", label="Sales Performance Leaderboard", icon="🏆")
     
