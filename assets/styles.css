@@ -1,0 +1,336 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");
+
+html,
+body,
+[class*="css"] {
+  font-family: "Inter", sans-serif;
+}
+
+.stApp,
+.stAppViewMain {
+  background-color: #ffffff !important;
+}
+
+[data-testid="stHeader"] {
+  background-color: __SECONDARY__ !important;
+  border-bottom: 3px solid __PRIMARY__ !important;
+  height: 3.75rem !important;
+}
+
+.stAppViewMain > div:first-child {
+  padding-top: 4.5rem !important;
+}
+
+[data-testid="stSidebar"] {
+  background-color: #f8fafc !important;
+  border-right: 2px solid #e2e8f0 !important;
+}
+[data-testid="stSidebarContent"],
+[data-testid="stSidebarUserContent"] {
+  background-color: #f8fafc !important;
+}
+
+h1:not([style*="color"]),
+h2:not([style*="color"]),
+h3:not([style*="color"]),
+h4:not([style*="color"]),
+h5:not([style*="color"]),
+h6:not([style*="color"]),
+p:not([style*="color"]),
+label,
+li,
+div[data-testid="stMarkdownContainer"]
+  *:not(.hit-rate-text):not([style*="color"]):not([class*="stPageLink"]):not(
+    [data-testid="stPageLink-Form"]
+  ) {
+  color: #1e293b;
+}
+
+span:not([class*="hit-rate"]):not([class*="hit-rate-text"]):not(
+    [style*="color"]
+  ):not([class*="stPageLink"]) {
+  color: #1e293b;
+}
+
+/* FIX CONTRAST SIDEBAR NATIVE LINKS */
+[data-testid="stSidebarContent"] [data-testid="stPageLink-Form"] span,
+[data-testid="stSidebarContent"] a[data-testid="stPageLink-Form"] * {
+  color: #1e293b !important;
+}
+
+div[data-baseweb="select"] *,
+div[data-testid="stSelectbox"] *,
+div[data-baseweb="popover"] *,
+.stSelectbox div,
+span[data-baseweb="tag"] {
+  color: #1e293b !important;
+  background-color: #ffffff !important;
+}
+
+div[role="option"] * {
+  color: #1e293b !important;
+  background-color: #ffffff !important;
+}
+
+div[style*="background: linear-gradient"] h2,
+div[style*="background: linear-gradient"] p,
+div[style*="background: linear-gradient"] span,
+div[style*="background: linear-gradient"] * {
+  color: #ffffff !important;
+}
+
+[data-testid="stSidebarNav"] {
+  display: none !important;
+}
+
+[data-testid="stSidebarUserContent"] {
+  padding-top: 1rem !important;
+}
+
+div[data-testid="stMarkdownContainer"] table {
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.03) !important;
+}
+
+[data-testid="stExpander"] {
+  background-color: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02) !important;
+}
+
+[data-testid="stExpander"] details summary p {
+  font-weight: 600 !important;
+  color: #1e293b !important;
+}
+
+[data-testid="stExpander"] details summary:hover {
+  background-color: #f1f5f9 !important;
+  cursor: pointer;
+}
+
+div[data-testid="stMarkdownContainer"] a.nav-tile {
+  background-color: #ffffff !important;
+  border: 2px solid #e2e8f0 !important;
+  border-radius: 12px !important;
+  padding: 16px 14px !important;
+  text-align: center !important;
+  transition: all 0.2s !important;
+  cursor: pointer !important;
+  text-decoration: none !important;
+  color: #2d3748 !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04) !important;
+  display: block !important;
+  margin-bottom: 8px !important;
+}
+
+div[data-testid="stMarkdownContainer"] a.nav-tile:hover {
+  border-color: __PRIMARY__ !important;
+  box-shadow: 0 4px 16px rgba(255, 98, 0, 0.12) !important;
+  transform: translateY(-2px) !important;
+  color: #1a202c !important;
+}
+
+div[data-testid="stMarkdownContainer"] a.nav-tile .nav-label {
+  font-weight: 700 !important;
+  font-size: 0.9rem !important;
+  color: #1a202c !important;
+}
+
+div[data-testid="stMarkdownContainer"] a.nav-tile .nav-desc {
+  font-size: 0.75rem !important;
+  color: #718096 !important;
+  margin-top: 4px !important;
+}
+
+.kpi-card {
+  background: __WHITE__ !important;
+  border-radius: 12px !important;
+  padding: 18px 20px !important;
+  border-left: 5px solid __PRIMARY__ !important;
+  border-top: 1px solid #e2e8f0 !important;
+  border-right: 1px solid #e2e8f0 !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04) !important;
+  margin-bottom: 15px !important;
+}
+.kpi-card .kpi-label {
+  font-size: 0.8rem !important;
+  font-weight: 600 !important;
+  color: #64748b !important;
+  text-transform: uppercase !important;
+  margin-bottom: 4px !important;
+}
+.kpi-card .kpi-value {
+  font-size: 1.75rem !important;
+  font-weight: 700 !important;
+  color: __DARK_GRAY__ !important;
+}
+.kpi-card .kpi-delta {
+  font-size: 0.85rem !important;
+  margin-top: 6px !important;
+  font-weight: 500 !important;
+}
+.kpi-card .kpi-delta.up {
+  color: __SUCCESS__ !important;
+}
+.kpi-card .kpi-delta.down {
+  color: __DANGER__ !important;
+}
+.kpi-card .kpi-delta.flat {
+  color: __WARNING__ !important;
+}
+
+.section-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: __SECONDARY__;
+  border-bottom: 2px solid __PRIMARY__;
+  padding-bottom: 6px;
+  margin: 25px 0 15px 0;
+}
+
+.stButton button,
+div[data-testid="stDownloadButton"] button {
+  background-color: __SECONDARY__ !important;
+  color: #ffffff !important;
+  border: 1px solid __SECONDARY__ !important;
+  border-radius: 8px !important;
+  padding: 0.6rem 1.5rem !important;
+  font-weight: 700 !important;
+  width: 100% !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: all 0.2s ease-in-out !important;
+  box-shadow: 0 4px 6px rgba(0, 47, 108, 0.15) !important;
+}
+
+.stButton button:hover,
+div[data-testid="stDownloadButton"] button:hover {
+  background-color: __PRIMARY__ !important;
+  border-color: __PRIMARY__ !important;
+  color: #ffffff !important;
+  box-shadow: 0 6px 14px rgba(255, 98, 0, 0.25) !important;
+  transform: translateY(-1px);
+}
+
+.stButton button p,
+div[data-testid="stDownloadButton"] button p {
+  color: #ffffff !important;
+  font-weight: 700 !important;
+}
+
+.stApp [data-testid="stSidebarCollapseButton"],
+.stApp button[aria-label="Collapse sidebar"] {
+  background-color: transparent !important;
+  border: none !important;
+  border-radius: 50% !important;
+  box-shadow: none !important;
+  z-index: 999999 !important;
+  width: 40px !important;
+  height: 40px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  opacity: 1 !important;
+  top: 0.5rem !important;
+}
+
+.stApp [data-testid="stSidebarCollapseButton"] svg,
+.stApp button[aria-label="Collapse sidebar"] svg,
+.stApp button[aria-label="Collapse sidebar"] svg * {
+  fill: #475569 !important;
+  stroke: #475569 !important;
+  color: #475569 !important;
+}
+
+.stApp [data-testid="stSidebarCollapseButton"]:hover,
+.stApp button[aria-label="Collapse sidebar"]:hover {
+  background-color: #e2e8f0 !important;
+}
+
+div[data-testid="stHeader"] button[aria-label="Expand sidebar"],
+div[data-testid="stHeader"] [data-testid="stSidebarCollapseButton"] {
+  background-color: #ffffff !important;
+  border: 2px solid __PRIMARY__ !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
+  opacity: 1 !important;
+  position: fixed !important;
+  left: 16px !important;
+  top: 10px !important;
+  z-index: 999999 !important;
+  width: 40px !important;
+  height: 40px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+div[data-testid="stHeader"] button[aria-label="Expand sidebar"] svg,
+div[data-testid="stHeader"] [data-testid="stSidebarCollapseButton"] svg,
+div[data-testid="stHeader"] button[aria-label="Expand sidebar"] svg *,
+div[data-testid="stHeader"] [data-testid="stSidebarCollapseButton"] svg * {
+  fill: __PRIMARY__ !important;
+  stroke: __PRIMARY__ !important;
+  color: __PRIMARY__ !important;
+}
+
+div[data-testid="stHeader"] button[aria-label="Expand sidebar"]:hover,
+div[data-testid="stHeader"] [data-testid="stSidebarCollapseButton"]:hover {
+  background-color: __PRIMARY__ !important;
+  border-color: __PRIMARY__ !important;
+  box-shadow: 0 4px 12px rgba(255, 98, 0, 0.3) !important;
+}
+
+div[data-testid="stHeader"] button[aria-label="Expand sidebar"]:hover svg,
+div[data-testid="stHeader"] button[aria-label="Expand sidebar"]:hover svg * {
+  fill: #ffffff !important;
+  stroke: #ffffff !important;
+  color: #ffffff !important;
+}
+
+div[data-testid="stHeader"] > div:nth-child(2) button,
+div[data-testid="stHeader"] > div:nth-child(2) button svg,
+div[data-testid="stHeader"] > div:nth-child(2) button svg * {
+  color: #ffffff !important;
+  fill: #ffffff !important;
+  stroke: #ffffff !important;
+}
+
+div[data-testid="stHeader"] > div:nth-child(2) button {
+  position: static !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+/* ─── STICKY FOOTER LOCK SYSTEM ────────────────────────────────────────── */
+
+/* Memberikan padding bawah pada kontainer utama Streamlit agar konten tidak tertutup footer */
+.stAppViewMain > div:first-child {
+  padding-bottom: 60px !important;
+}
+
+/* ─── STICKY FOOTER LOCK SYSTEM ────────────────────────────────────────── */
+
+.stAppViewMain > div:first-child {
+  padding-bottom: 50px !important; /* Sedikit dikurangi karena footernya mengecil */
+}
+
+.custom-footer {
+  position: fixed !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  background-color: #ffffff !important;
+  z-index: 99999 !important;
+  margin-top: 0 !important;
+  padding: 8px 20px !important; /* Dipersempit jarak atas-bawahnya agar lebih proporsional */
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.03) !important;
+  border-top: 1px solid #e2e8f0 !important;
+
+  /* PENGATURAN RATAN TENGAH */
+  display: block !important;
+  text-align: center !important;
+}
