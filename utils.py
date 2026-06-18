@@ -13,6 +13,10 @@ PRIMARY     = "#FF6200"  # Betadine Orange
 SECONDARY   = "#002F6C"  # Deep Corporate Blue
 LIGHT_GRAY  = "#F8FAFC"  # Clean card backgrounds
 WHITE       = "#FFFFFF"
+DARK_GRAY   = "#1E293B"  # Tambahan warna untuk placeholder CSS
+SUCCESS     = "#22C55E"  # Tambahan warna untuk placeholder CSS
+DANGER      = "#EF4444"  # Tambahan warna untuk placeholder CSS
+WARNING     = "#F59E0B"  # Tambahan warna untuk placeholder CSS
 
 # Mapping opsional, jika nama kolom di DB sudah sesuai legasi, program utama akan otomatis mencocokkannya
 MAP_SKU_DISPLAY = {
@@ -112,7 +116,7 @@ def load_data_all(worksheet_name: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 def inject_css():
-    """Menyuntikkan gaya visual Light-Mode dari assets/styles.css."""
+    """Menyuntikkan gaya visual Light-Mode dari assets/styles.css dengan mem-parsing token placeholder warna."""
     current_dir = os.path.dirname(os.path.abspath(__file__))
     css_path = os.path.join(current_dir, "assets", "styles.css")
     
@@ -120,6 +124,16 @@ def inject_css():
         try:
             with open(css_path, "r") as f:
                 css = f.read()
+            
+            # Mengganti placeholder teks di styles.css menjadi Hex warna asli sebelum disuntikkan
+            css = css.replace("__PRIMARY__", PRIMARY)
+            css = css.replace("__SECONDARY__", SECONDARY)
+            css = css.replace("__WHITE__", WHITE)
+            css = css.replace("__DARK_GRAY__", DARK_GRAY)
+            css = css.replace("__SUCCESS__", SUCCESS)
+            css = css.replace("__DANGER__", DANGER)
+            css = css.replace("__WARNING__", WARNING)
+            
             st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
             return
         except Exception:
@@ -142,7 +156,7 @@ def render_footer():
         f"""
         <hr style='margin-top: 50px; border: 0; border-top: 1px solid #E2E8F0;' />
         <div style="text-align: center; color: #64748B; font-size: 0.7rem; font-weight: 500; padding-bottom: 15px;">
-            © {pd.Timestamp.now().year} PT Oji Indo Makmur / Mundipharma Betadine Tracker. All Rights Reserved.
+            © {pd.Timestamp.now().year} iNova SMD Betadine Tracker. All Rights Reserved.
         </div>
         """,
         unsafe_allow_html=True
