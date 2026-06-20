@@ -6,9 +6,9 @@ from utils import load_data_all, inject_css, render_footer, SECONDARY
 
 # ─── CONFIG & STYLING ────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Betadine Sales Tracker Portal",
+    page_title="Betadine Sales Dashboard",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 inject_css()
 
@@ -16,8 +16,8 @@ inject_css()
 st.markdown(
     f"""
     <div style='background: linear-gradient(135deg, {SECONDARY} 0%, #1E40AF 100%); padding: 30px; border-radius: 16px; color: white; margin-bottom: 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);'>
-        <h1 style='margin: 0; font-size: 2.2rem; font-weight: 800; letter-spacing: -0.02em;'>Betadine Sales Analytics Portal</h1>
-        <p style='margin: 8px 0 0 0; font-size: 1rem; opacity: 0.9;'>Platform pusat data peninjauan kinerja penjualan aktual (Sell-In) Betadine secara langsung berdasar data Supabase.</p>
+        <h1 style='margin: 0; font-size: 2rem; font-weight: 800; letter-spacing: -0.02em;'>Betadine Sales Dashboard</h1>
+        <p style='margin: 8px 0 0 0; font-size: 0.8rem; opacity: 0.9;'>Platform pusat data peninjauan kinerja penjualan aktual (Sell-In).</p>
     </div>
     """, 
     unsafe_allow_html=True
@@ -141,8 +141,6 @@ df_matrix['Period_Name'] = df_matrix[month_col].map(dynamic_month_map)
 df_matrix = df_matrix[df_matrix[month_col].isin(target_months_indices)]
 
 # ─── RENDER TABEL UTAMA ──────────────────────────────────────────────────────
-st.markdown("---")
-st.subheader("📋 Matriks Pivot Performa Produk (3 Bulan Rolling)")
 
 if not df_matrix.empty:
     pivot_qty = df_matrix.pivot_table(
