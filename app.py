@@ -50,6 +50,11 @@ category_col = find_column_safely(["CATEGORY", "KATEGORI", "category", "PRODUCT 
 value_metric_col = find_column_safely(["SUM OF VALUE", "VALUE", "value", "ACTUAL VALUE", "sum_of_value"], "Sum of Value")
 qty_metric_col = find_column_safely(["SUM OF QTY", "QTY", "qty", "ACTUAL QTY", "sum_of_qty"], "Sum of Qty")
 
+# Kolom filter tambahan baru
+cust_code_col = find_column_safely(["inova_id_cust_code", "INOVA CODE", "cust_code"], "inova_id_cust_code")
+cust_name_col = find_column_safely(["inova_id_cust_name", "NAMA OUTLET", "cust_name", "OUTLET NAME"], "inova_id_cust_name")
+dist_cust_col = find_column_safely(["dist_cust_id", "ID APL/PPG", "dist_id"], "dist_cust_id")
+
 # ─── CLEANING & TYPE CONVERSIONS ─────────────────────────────────────────────
 df_proc[year_col] = pd.to_numeric(df_proc[year_col], errors='coerce').fillna(2026).astype(int)
 df_proc[month_col] = pd.to_numeric(df_proc[month_col], errors='coerce').fillna(6).astype(int)
@@ -58,16 +63,54 @@ df_proc[qty_metric_col] = pd.to_numeric(df_proc[qty_metric_col], errors='coerce'
 
 df_proc[category_col] = df_proc[category_col].fillna("WOUND").astype(str).str.strip().str.upper()
 df_proc[sku_col] = df_proc[sku_col].fillna("UNASSIGNED").astype(str).str.strip()
+df_proc[cust_code_col] = df_proc[cust_code_col].fillna("UNASSIGNED").astype(str).str.strip()
+df_proc[cust_name_col] = df_proc[cust_name_col].fillna("UNASSIGNED").astype(str).str.strip()
+df_proc[dist_cust_col] = df_proc[dist_cust_col].fillna("UNASSIGNED").astype(str).str.strip()
 
-# ─── SIDEBAR LOCK TIME BASE ──────────────────────────────────────────────────
-st.sidebar.header("🔍 Filter Waktu Analisis")
-available_years = sorted(list(df_proc[year_col].unique()), reverse=True)
-selected_year = st.sidebar.selectbox("Tahun Target", available_years if available_years else [2026], index=0)
+# ─── MAIN FILTER PANEL (DI ATAS PIVOT TABLE) ─────────────────────────────────
+st.subheader("⚙️ Panel Kontrol & Filter Analisis")
 
-available_months = sorted(list(df_proc[df_proc[year_col] == selected_year][month_col].unique()), reverse=True)
-selected_month = st.sidebar.selectbox("Bulan Target Basis", available_months if available_months else [6], index=0)
+# Baris Filter Utama 1: Waktu & Kategori
+col1, col2, col3 = st.columns(3)
+with col1:
+    available_years = sorted(list(df_proc[year_col].unique()), reverse=True)
+    selected_year = st.selectbox("📅 Tahun Target", available_years if available_years else [2026], index=0)
 
-# ─── LOGIKA PENENTUAN 4 BULAN BERJALAN SECARA DINAMIS (REUSEABLE) ────────────
+with col2:
+    available_months = sorted(list(df_proc[df_proc[year_col] == selected_year][month_col].unique()), reverse=True)
+    selected_month = st.selectbox("📆 Bulan Target Basis", available_months if available_months else [6], index=0)
+
+with col3:
+    available_categories = ["All Categories"] + sorted(list(df_proc[category_col].unique()))
+    selected_category = st.selectbox("📂 Filter Kategori Produk", available_categories, index=0)
+
+# Baris Filter Utama 2: Dimensi Toko & Distributor
+col4, col5, col6 = st.columns(3)
+with col4:
+    unique_codes = ["All iNova Codes"] + sorted(list(df_proc[cust_code_col].unique()))
+    selected_cust_code = st.selectbox("🔑 iNova Code", unique_codes, index=0)
+
+with col5:
+    unique_names = ["All Outlets"] + sorted(list(df_proc[cust_name_col].unique()))
+    selected_cust_name = st.selectbox("🏪 Nama Outlet", unique_names, index=0)
+
+with col6:
+    unique_dist = ["All ID APL/PPG"] + sorted(list(df_proc[dist_cust_col].unique()))
+    selected_dist_cust = st.selectbox("🆔 ID APL/PPG", unique_dist, index=0)
+
+# ─── PROSES FILTERING DATA BERTAHAP ──────────────────────────────────────────
+df_matrix = df_proc[df_proc[year_col] == selected_year].copy()
+
+if selected_category != "All Categories":
+    df_matrix = df_matrix[df_matrix[category_col] == selected_category]
+if selected_cust_code != "All iNova Codes":
+    df_matrix = df_matrix[df_matrix[cust_code_col] == selected_cust_code]
+if selected_cust_name != "All Outlets":
+    df_matrix = df_matrix[df_matrix[cust_name_col] == selected_cust_name]
+if selected_dist_cust != "All ID APL/PPG":
+    df_matrix = df_matrix[df_matrix[dist_cust_col] == selected_dist_cust]
+
+# ─── LOGIKA PENENTUAN 4 BULAN BERJALAN SECARA DINAMIS ────────────────────────
 month_names_map = {
     1:"Jan", 2:"Feb", 3:"Mar", 4:"Apr", 5:"Mei", 6:"Jun",
     7:"Jul", 8:"Agu", 9:"Sep", 10:"Okt", 11:"Nov", 12:"Des"
@@ -87,16 +130,7 @@ col_name_prev1 = f"{month_names_map[m_prev1]} {selected_year}"
 col_name_current = f"{month_names_map[m_current]} {selected_year}"
 avg_col_name = f"AVG QTY 3M ({month_names_map[m_prev3]}-{month_names_map[m_prev1]})"
 
-# ─── MAIN DISPLAY MATRIX AREA ────────────────────────────────────────────────
-st.subheader("📋 Matriks Pivot Performa Produk (3 Bulan Rolling)")
-
-available_categories = ["All Categories"] + sorted(list(df_proc[category_col].unique()))
-selected_category = st.selectbox("Filter Kategori Produk", available_categories, index=0)
-
-df_matrix = df_proc[df_proc[year_col] == selected_year].copy()
-if selected_category != "All Categories":
-    df_matrix = df_matrix[df_matrix[category_col] == selected_category]
-
+# Bangun pemetaan dinamis untuk kolom pivot
 dynamic_month_map = {
     m_prev3: f"{month_names_map[m_prev3]} {selected_year}",
     m_prev2: col_name_prev2,
@@ -105,6 +139,10 @@ dynamic_month_map = {
 }
 df_matrix['Period_Name'] = df_matrix[month_col].map(dynamic_month_map)
 df_matrix = df_matrix[df_matrix[month_col].isin(target_months_indices)]
+
+# ─── RENDER TABEL UTAMA ──────────────────────────────────────────────────────
+st.markdown("---")
+st.subheader("📋 Matriks Pivot Performa Produk (3 Bulan Rolling)")
 
 if not df_matrix.empty:
     pivot_qty = df_matrix.pivot_table(
@@ -152,10 +190,8 @@ if not df_matrix.empty:
     def format_cells_with_rules(df):
         formatted_df = df.copy()
         last_row_idx = df.index[-1]
-        
         loop_cols = [avg_col_name, col_name_prev2, col_name_prev1, col_name_current]
         
-        # SINKRONISASI TIPE DATA AGAR TIDAK TYPEERROR
         for col in loop_cols:
             formatted_df[col] = formatted_df[col].astype(object)
         
@@ -217,10 +253,10 @@ if not df_matrix.empty:
         st.download_button(
             label="📥 Download Pivot Report (Excel)",
             data=output.getvalue(),
-            file_name=f"Actual_Performance_Rolling_Month_{selected_month}.xlsx",
+            file_name=f"Actual_Performance_Filtered_Month_{selected_month}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 else:
-    st.warning(f"⚠️ Tidak ada data transaksi aktual pada rentang waktu yang dipilih pada tahun {selected_year}.")
+    st.warning("⚠️ Tidak ada data transaksi aktual pada kombinasi filter yang Anda pilih.")
 
 render_footer()
