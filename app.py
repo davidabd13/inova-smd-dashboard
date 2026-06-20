@@ -47,8 +47,8 @@ year_col = find_column_safely(["YEAR", "YEAR_NUM", "TAHUN", "year"], "YEAR")
 month_col = find_column_safely(["MONTH", "MONTH_NUM", "BULAN", "month"], "MONTH")
 sku_col = find_column_safely(["inova_id_sku_name", "SKU NAME", "sku_name", "INOVA ID SKU NAME"], "PRODUCT SKU NAME")
 category_col = find_column_safely(["CATEGORY", "KATEGORI", "category", "PRODUCT CATEGORY"], "CATEGORY")
-value_metric_col = find_column_safely(["SUM OF VALUE", "VALUE", "value", "ACTUAL VALUE", "TOTAL_SALES"], "Sum of Value")
-qty_metric_col = find_column_safely(["SUM OF QTY", "QTY", "qty", "ACTUAL QTY", "TOTAL_QTY"], "Sum of Qty")
+value_metric_col = find_column_safely(["SUM OF VALUE", "VALUE", "value", "ACTUAL VALUE", "sum_of_value"], "Sum of Value")
+qty_metric_col = find_column_safely(["SUM OF QTY", "QTY", "qty", "ACTUAL QTY", "sum_of_qty"], "Sum of Qty")
 
 # ─── CLEANING & TYPE CONVERSIONS (Aman Tanpa Merusak Data Asli) ──────────────
 df_proc[year_col] = pd.to_numeric(df_proc[year_col], errors='coerce').fillna(2026).astype(int)
