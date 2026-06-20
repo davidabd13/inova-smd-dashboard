@@ -45,7 +45,7 @@ def find_column_safely(possible_names, default_name):
 
 year_col = find_column_safely(["YEAR", "YEAR_NUM", "TAHUN", "year"], "YEAR")
 month_col = find_column_safely(["MONTH", "MONTH_NUM", "BULAN", "month"], "MONTH")
-sku_col = find_column_safely(["PRODUCT SKU NAME", "SKU NAME", "sku_name", "INOVA ID SKU NAME"], "PRODUCT SKU NAME")
+sku_col = find_column_safely(["inova_id_sku_name", "SKU NAME", "sku_name", "INOVA ID SKU NAME"], "PRODUCT SKU NAME")
 category_col = find_column_safely(["CATEGORY", "KATEGORI", "category", "PRODUCT CATEGORY"], "CATEGORY")
 value_metric_col = find_column_safely(["SUM OF VALUE", "VALUE", "value", "ACTUAL VALUE", "TOTAL_SALES"], "Sum of Value")
 qty_metric_col = find_column_safely(["SUM OF QTY", "QTY", "qty", "ACTUAL QTY", "TOTAL_QTY"], "Sum of Qty")
