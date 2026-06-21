@@ -43,8 +43,8 @@ def find_column_safely(possible_names, default_name):
     df_proc[default_name] = 0.0
     return default_name
 
-# 🚀 [TAMBAHAN UNTUK TESTING REGION] Pencarian kolom Region secara aman
-region_col = find_column_safely(["REGION", "WILAYAH", "AREA", "region"], "REGION")
+# 🚀 Membaca kolom wilayah secara akurat menggunakan nama kolom riil Anda
+region_col = find_column_safely(["INDO5_TEAM_SPV_REGION", "indo5_team_spv_region", "REGION", "WILAYAH"], "REGION")
 
 year_col = find_column_safely(["YEAR", "YEAR_NUM", "TAHUN", "year"], "YEAR")
 month_col = find_column_safely(["MONTH", "MONTH_NUM", "BULAN", "month"], "MONTH")
@@ -70,9 +70,8 @@ df_proc[cust_code_col] = df_proc[cust_code_col].fillna("UNASSIGNED").astype(str)
 df_proc[cust_name_col] = df_proc[cust_name_col].fillna("UNASSIGNED").astype(str).str.strip()
 df_proc[dist_cust_col] = df_proc[dist_cust_col].fillna("UNASSIGNED").astype(str).str.strip()
 
-# 🔒 [HARDCODED ROW-LEVEL SECURITY UNTUK TESTING REGION 1]
-# Saring data di tingkat paling atas agar RAM yang terpakai langsung mengecil drastis.
-# Ganti "REGION 1" di bawah sesuai dengan penamaan teks wilayah yang ada di database Anda (misal: "JABODETABEK", "JAWA BARAT", dll.)
+# 🔒 [HARDCODED ROW-LEVEL SECURITY UNTUK TESTING]
+# Silakan ganti "REGION 1" di bawah ini dengan nama wilayah riil yang tertulis di dalam kolom indo5_team_spv_region Anda
 TARGET_REGION_TEST = "REGION 1" 
 df_proc = df_proc[df_proc[region_col].astype(str).str.upper().str.strip() == TARGET_REGION_TEST.upper()]
 
