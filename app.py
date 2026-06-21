@@ -43,8 +43,8 @@ def find_column_safely(possible_names, default_name):
     df_proc[default_name] = 0.0
     return default_name
 
-# 🚀 Membaca kolom wilayah secara akurat menggunakan nama kolom riil Anda
-region_col = find_column_safely(["INDO5_TEAM_SPV_REGION", "indo5_team_spv_region", "REGION", "WILAYAH"], "REGION")
+# Kunci kolom region komprehensif
+region_col = find_column_safely(["INDO5_TEAM_SPV_REGION", "INDO5_TO", "REGION", "WILAYAH"], "REGION")
 
 year_col = find_column_safely(["YEAR", "YEAR_NUM", "TAHUN", "year"], "YEAR")
 month_col = find_column_safely(["MONTH", "MONTH_NUM", "BULAN", "month"], "MONTH")
@@ -70,8 +70,7 @@ df_proc[cust_code_col] = df_proc[cust_code_col].fillna("UNASSIGNED").astype(str)
 df_proc[cust_name_col] = df_proc[cust_name_col].fillna("UNASSIGNED").astype(str).str.strip()
 df_proc[dist_cust_col] = df_proc[dist_cust_col].fillna("UNASSIGNED").astype(str).str.strip()
 
-# 🔒 [HARDCODED ROW-LEVEL SECURITY UNTUK TESTING]
-# Silakan ganti "REGION 1" di bawah ini dengan nama wilayah riil yang tertulis di dalam kolom indo5_team_spv_region Anda
+# 🔒 [TESTING] SILAKAN SESUAIKAN NAMA REGION DI SINI UNTUK KEPENTINGAN SHARDING
 TARGET_REGION_TEST = "REGION 1" 
 df_proc = df_proc[df_proc[region_col].astype(str).str.upper().str.strip() == TARGET_REGION_TEST.upper()]
 
@@ -133,48 +132,43 @@ for i in range(3, -1, -1):
 
 m_prev3, m_prev2, m_prev1, m_current = target_months_indices
 
+col_name_prev3 = f"{month_names_map[m_prev3]} {selected_year}"
 col_name_prev2 = f"{month_names_map[m_prev2]} {selected_year}"
 col_name_prev1 = f"{month_names_map[m_prev1]} {selected_year}"
 col_name_current = f"{month_names_map[m_current]} {selected_year}"
 avg_col_name = f"AVG QTY 3M ({month_names_map[m_prev3]}-{month_names_map[m_prev1]})"
 
-# Bangun pemetaan dinamis untuk kolom pivot
-dynamic_month_map = {
-    m_prev3: f"{month_names_map[m_prev3]} {selected_year}",
-    m_prev2: col_name_prev2,
-    m_prev1: col_name_prev1,
-    m_current: col_name_current
-}
-df_matrix['Period_Name'] = df_matrix[month_col].map(dynamic_month_map)
+# Amankan data subset bulan berjalan
 df_matrix = df_matrix[df_matrix[month_col].isin(target_months_indices)]
 
 # ─── RENDER TABEL UTAMA ──────────────────────────────────────────────────────
 
 if not df_matrix.empty:
+    # 📌 PERBAIKAN: Pivot dibentuk berdasarkan ANGKA BULAN (int), bukan string alfabet nama bulan
     pivot_qty = df_matrix.pivot_table(
         index=[sku_col, category_col],
-        columns='Period_Name',
+        columns=month_col,
         values=qty_metric_col,
         aggfunc='sum',
         fill_value=0.0
     ).reset_index()
 
-    for m_label in dynamic_month_map.values():
-        if m_label not in pivot_qty.columns:
-            pivot_qty[m_label] = 0.0
+    # Pastikan seluruh kolom target bulan index tersedia di dataframe hasil pivot
+    for m_idx in target_months_indices:
+        if m_idx not in pivot_qty.columns:
+            pivot_qty[m_idx] = 0.0
 
-    str_prev3 = dynamic_month_map[m_prev3]
-    str_prev2 = dynamic_month_map[m_prev2]
-    str_prev1 = dynamic_month_map[m_prev1]
-    
-    pivot_qty[avg_col_name] = pivot_qty[[str_prev3, str_prev2, str_prev1]].mean(axis=1).apply(lambda x: math.ceil(x))
+    # Kalkulasi rata-rata 3 bulan sebelum target secara aman berbasis posisi index angka bulan
+    pivot_qty[avg_col_name] = pivot_qty[[m_prev3, m_prev2, m_prev1]].mean(axis=1).apply(lambda x: math.ceil(x))
 
-    final_view_cols = [sku_col, category_col, avg_col_name, col_name_prev2, col_name_prev1, col_name_current]
+    # Reindex kolom menggunakan urutan yang benar dan langsung beri nama label aslinya
+    final_view_cols = [sku_col, category_col, avg_col_name, m_prev2, m_prev1, m_current]
     pivot_qty = pivot_qty.reindex(columns=final_view_cols, fill_value=0.0)
     pivot_qty.columns = ["PRODUCT SKU NAME", "CATEGORY", avg_col_name, col_name_prev2, col_name_prev1, col_name_current]
 
     pivot_qty = pivot_qty.sort_values(by=col_name_current, ascending=False)
 
+    # Ambil sum value untuk ringkasan baris total akhir
     val_m3 = df_matrix[df_matrix[month_col] == m_prev3][value_metric_col].sum()
     val_m4 = df_matrix[df_matrix[month_col] == m_prev2][value_metric_col].sum()
     val_m5 = df_matrix[df_matrix[month_col] == m_prev1][value_metric_col].sum()
