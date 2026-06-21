@@ -23,7 +23,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# ─── INGESTION DATA ──────────────────────────────────────────────────────────
+# ─── INGESTION DATA VIA UTILS ────────────────────────────────────────────────
 df_raw = load_data_all(worksheet_name="sellinbysku")
 
 if df_raw.empty:
@@ -53,10 +53,11 @@ category_col = find_column_safely(["CATEGORY", "KATEGORI", "category", "PRODUCT 
 value_metric_col = find_column_safely(["SUM OF VALUE", "VALUE", "value", "ACTUAL VALUE", "sum_of_value"], "Sum of Value")
 qty_metric_col = find_column_safely(["SUM OF QTY", "QTY", "qty", "ACTUAL QTY", "sum_of_qty"], "Sum of Qty")
 
-# Kolom filter tambahan baru
+# Kolom filter tambahan baru & Kolom Kunci Channel Level 3
 cust_code_col = find_column_safely(["inova_id_cust_code", "INOVA CODE", "cust_code"], "inova_id_cust_code")
 cust_name_col = find_column_safely(["inova_id_cust_name", "NAMA OUTLET", "cust_name", "OUTLET NAME"], "inova_id_cust_name")
 dist_cust_col = find_column_safely(["dist_cust_id", "ID APL/PPG", "dist_id"], "dist_cust_id")
+channel_l3_col = find_column_safely(["CHANNEL LEVEL 3", "channel_level_3", "CHANNEL_L3"], "CHANNEL LEVEL 3")
 
 # ─── CLEANING & TYPE CONVERSIONS ─────────────────────────────────────────────
 df_proc[year_col] = pd.to_numeric(df_proc[year_col], errors='coerce').fillna(2026).astype(int)
@@ -69,10 +70,45 @@ df_proc[sku_col] = df_proc[sku_col].fillna("UNASSIGNED").astype(str).str.strip()
 df_proc[cust_code_col] = df_proc[cust_code_col].fillna("UNASSIGNED").astype(str).str.strip()
 df_proc[cust_name_col] = df_proc[cust_name_col].fillna("UNASSIGNED").astype(str).str.strip()
 df_proc[dist_cust_col] = df_proc[dist_cust_col].fillna("UNASSIGNED").astype(str).str.strip()
+df_proc[channel_l3_col] = df_proc[channel_l3_col].fillna("UNASSIGNED").astype(str).str.strip().str.upper()
 
 # 🔒 [TESTING] SILAKAN SESUAIKAN NAMA REGION DI SINI UNTUK KEPENTINGAN SHARDING
 TARGET_REGION_TEST = "REGION 1" 
 df_proc = df_proc[df_proc[region_col].astype(str).str.upper().str.strip() == TARGET_REGION_TEST.upper()]
+
+# ─── LOGIKA INTEGRASI TABEL SUPABASE: msa_recommendation ─────────────────────
+# Memuat master data rekomendasi dari Supabase melalui fungsi utils Anda
+df_msa = load_data_all(worksheet_name="msa_recommendation")
+
+if not df_msa.empty:
+    # Standarisasi kolom msa_recommendation agar aman saat proses matching
+    df_msa.columns = df_msa.columns.str.strip()
+    
+    # Resolver kolom dinamis untuk tabel msa
+    msa_sku_col = next((c for c in df_msa.columns if c.upper() in ["inova_id_sku_name", "SKU_NAME", "PRODUCT SKU NAME"]), None)
+    msa_l3_col = next((c for c in df_msa.columns if c.upper() in ["CHANNEL LEVEL 3", "CHANNEL_LEVEL_3", "CHANNEL LEVEL3"]), None)
+    msa_listing_col = next((c for c in df_msa.columns if c.upper() in ["STATUS LISTING", "STATUS_LISTING", "LISTING"]), None)
+    
+    if msa_sku_col and msa_l3_col and msa_listing_col:
+        # Bersihkan data pembanding
+        df_msa[msa_sku_col] = df_msa[msa_sku_col].astype(str).str.strip()
+        df_msa[msa_l3_col] = df_msa[msa_l3_col].astype(str).str.strip().str.upper()
+        df_msa[msa_listing_col] = pd.to_numeric(df_msa[msa_listing_col], errors='coerce').fillna(0).astype(int)
+        
+        # Ambil pasang kunci (SKU, Channel L3) yang lolos filter berangka 1
+        allowed_pairs = df_msa[df_msa[msa_listing_col] == 1][[msa_sku_col, msa_l3_col]].drop_duplicates()
+        allowed_pairs.columns = ['MATCH_SKU', 'MATCH_L3']
+        
+        # Lakukan Inner Join / Filter subset data utama menggunakan merge
+        df_proc = pd.merge(
+            df_proc,
+            allowed_pairs,
+            left_on=[sku_col, channel_l3_col],
+            right_on=['MATCH_SKU', 'MATCH_L3'],
+            how='inner'
+        ).drop(columns=['MATCH_SKU', 'MATCH_L3'])
+else:
+    st.warning("⚠️ Gagal memvalidasi listing karena tabel 'msa_recommendation' tidak ditemukan atau kosong.")
 
 # ─── MAIN FILTER PANEL (DI ATAS PIVOT TABLE) ─────────────────────────────────
 st.subheader("⚙️ Panel Kontrol & Filter Analisis")
@@ -144,7 +180,7 @@ df_matrix = df_matrix[df_matrix[month_col].isin(target_months_indices)]
 # ─── RENDER TABEL UTAMA ──────────────────────────────────────────────────────
 
 if not df_matrix.empty:
-    # 📌 PERBAIKAN: Pivot dibentuk berdasarkan ANGKA BULAN (int), bukan string alfabet nama bulan
+    # Pivot dibentuk berdasarkan ANGKA BULAN (int)
     pivot_qty = df_matrix.pivot_table(
         index=[sku_col, category_col],
         columns=month_col,
