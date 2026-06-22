@@ -5,7 +5,8 @@ import math
 from utils import load_data_all, inject_css, render_footer, SECONDARY
 
 # ─── CONFIG & STYLING ────────────────────────────────────────────────────────
-st.set_config(
+# FIX TYPO: Menggunakan st.set_page_config yang benar
+st.set_page_config(
     page_title="Betadine Sales Dashboard",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -168,7 +169,7 @@ df_matrix = df_matrix[df_matrix[month_col].isin(target_months_indices)]
 
 if not df_matrix.empty or msa_ready:
     
-    # 1. BUAT PIVOT TABLE MURNI DARI TRANSAKSI AKTUAL TERLEBIH DAHULU (Menjamin data Maret & April utuh)
+    # 1. BUAT PIVOT TABLE MURNI DARI TRANSAKSI AKTUAL TERLEBIH DAHULU (Menjamin data Maret & April utuh tanpa crash metadata)
     if not df_matrix.empty:
         pivot_qty = df_matrix.pivot_table(
             index=[sku_col, category_col],
@@ -185,28 +186,24 @@ if not df_matrix.empty or msa_ready:
         if m_idx not in pivot_qty.columns:
             pivot_qty[m_idx] = 0.0
 
-    # 2. SELEKSI TARGET WAJIB DARI MSA KEMUDIAN SUNTIKKAN JIKA BELUM ADA DI TRANSAKSI
+    # 2. SELEKSI TARGET WAJIB DARI MSA KEMUDIAN SUNTIKKAN JIKA BELUM ADA DI TRANSAKSI (Tidak mengganggu transaksi riil)
     if msa_ready:
-        # Cari tahu channel apa saja yang aktif dari transaksi saat ini
         if not df_matrix.empty:
             active_channels_l3 = df_matrix[channel_l3_col].unique()
         else:
             active_channels_l3 = df_proc[channel_l3_col].unique()
 
-        # Filter target wajib berstatus 1 dari master msa
         df_targets = df_msa[
             (df_msa[msa_listing_col] == 1) & 
             (df_msa[msa_l3_col].isin(active_channels_l3))
         ]
         
-        # Cari SKU wajib yang belum masuk di pivot aktual
         existing_skus = pivot_qty[sku_col].unique() if not pivot_qty.empty else []
         missing_skus = df_targets[~df_targets[msa_sku_col].isin(existing_skus)][msa_sku_col].unique()
         
         if len(missing_skus) > 0:
             new_rows = []
             for m_sku in missing_skus:
-                # Ambil kategori pendukung yang sesuai dari master msa
                 match_cat_series = df_targets[df_targets[msa_sku_col] == m_sku][category_col]
                 match_cat = str(match_cat_series.iloc[0]).strip().upper() if not match_cat_series.empty else "WOUND"
                 
@@ -217,14 +214,14 @@ if not df_matrix.empty or msa_ready:
                 
             pivot_qty = pd.concat([pivot_qty, pd.DataFrame(new_rows)], ignore_index=True)
 
-    # Kalkulasi rata-rata 3 bulan sebelum target berjalan secara aman
+    # Kalkulasi rata-rata 3 bulan sebelum target berjalan secara aman berbasis posisi index angka bulan
     pivot_qty[avg_col_name] = pivot_qty[[m_prev3, m_prev2, m_prev1]].mean(axis=1).apply(lambda x: math.ceil(x))
 
     # Reindex kolom menggunakan susunan asli bawaan
     final_view_cols = [sku_col, category_col, avg_col_name, m_prev2, m_prev1, m_current]
     pivot_qty = pivot_qty.reindex(columns=final_view_cols, fill_value=0.0)
     
-    # 📌 REVISI POSISI KOLOM: Tambahkan kolom 'Target MSA' di posisi PALING KANAN (paling akhir)
+    # 📌 POSISI BARU: Tambahkan kolom 'Target MSA' di posisi PALING KANAN (paling akhir setelah bulan saat ini)
     pivot_qty['Target MSA'] = "❌"
     
     # Isi penanda centang secara dinamis berdasarkan database master msa
@@ -235,7 +232,7 @@ if not df_matrix.empty or msa_ready:
             if not is_listed.empty:
                 pivot_qty.at[idx, 'Target MSA'] = "✅"
 
-    # Setel penamaan label header kolom visual akhir
+    # Setel nama header kolom visual akhir (Target MSA diletakkan paling belakang)
     pivot_qty.columns = ["PRODUCT SKU NAME", "CATEGORY", avg_col_name, col_name_prev2, col_name_prev1, col_name_current, "TARGET MSA"]
 
     # Urutkan prioritas: Target MSA (✅ di atas), lalu pencapaian kuantiti bulan saat ini tertinggi
