@@ -149,13 +149,13 @@ if selected_cust_name != "All Outlets":
 if selected_dist_cust != "All ID APL/PPG":
     df_filtered = df_filtered[df_filtered[dist_cust_col] == selected_dist_cust]
 
-# Ambil acuan data target MSA khusus bulan berjalan (Current Month)
+# Ambil acuan data target MSA khusus bulan berjalan
 df_targets = df_filtered[(df_filtered['PERIOD_KEY'] == k_current) & (df_filtered[msa_listing_col] == 1)]
 
 # ─── RENDER TABEL UTAMA ──────────────────────────────────────────────────────
 if not df_filtered.empty or not df_targets.empty:
     
-    # KOREKSI UTAMA: Masukkan channel_l3_col ke index pivot agar agregasi data presisi sesuai database asli
+    # Logika Pivot tetap menggunakan channel_l3_col di background agar perhitungan presisi
     pivot_qty = df_filtered.pivot_table(
         index=[sku_col, category_col, channel_l3_col],
         columns='PERIOD_KEY',
@@ -168,13 +168,10 @@ if not df_filtered.empty or not df_targets.empty:
         if k not in pivot_qty.columns:
             pivot_qty[k] = 0.0
 
-    # Menghubungkan mapping Target MSA berdasarkan kombinasi unik SKU + Channel Level 3
-    # Menggunakan fungsi .max() untuk mengabaikan angka 0 jika ditemukan angka 1 (Menang Centang)
     target_msa_map = df_filtered[df_filtered['PERIOD_KEY'] == k_current].groupby(
         [sku_col, channel_l3_col]
     )[msa_listing_col].max().to_dict()
     
-    # Injeksi target SKU MSA yang belum memiliki transaksi penjualan aktual
     if not df_targets.empty:
         df_unique_targets = df_targets.drop_duplicates(subset=[sku_col, channel_l3_col])
         for _, t_row in df_unique_targets.iterrows():
@@ -182,7 +179,6 @@ if not df_filtered.empty or not df_targets.empty:
             m_cat = t_row[category_col]
             m_chan = t_row[channel_l3_col]
             
-            # Cek apakah kombinasi dimensi ini sudah ada di tabel pivot aktual
             exists = not pivot_qty[(pivot_qty[sku_col] == m_sku) & (pivot_qty[channel_l3_col] == m_chan)].empty
             if not exists:
                 row_data = {sku_col: m_sku, category_col: m_cat, channel_l3_col: m_chan}
@@ -190,17 +186,28 @@ if not df_filtered.empty or not df_targets.empty:
                     row_data[k] = 0.0
                 pivot_qty = pd.concat([pivot_qty, pd.DataFrame([row_data])], ignore_index=True)
 
-    # Menghitung Rata-rata 3 Bulan ke Belakang (Sebelum Current Month)
+    # Menghitung Rata-rata 3 Bulan ke Belakang
     pivot_qty[avg_col_name] = pivot_qty[[k_prev3, k_prev2, k_prev1]].mean(axis=1).apply(lambda x: math.ceil(x))
 
-    # Re-ordering susunan kolom tabel utama beserta penambahan kolom Channel Level 3
+    # Re-ordering susunan kolom tabel utama
     final_view_cols = [sku_col, category_col, channel_l3_col, avg_col_name, k_prev3, k_prev2, k_prev1, k_current]
     pivot_qty = pivot_qty.reindex(columns=final_view_cols, fill_value=0.0)
     
-    # Kolom Validasi Target Kepatuhan MSA mengacu mutlak pada channel_level_3
+    # Kolom Validasi Target Kepatuhan MSA mengacu pada channel_level_3
     pivot_qty['TARGET MSA'] = pivot_qty.apply(
         lambda r: "✅" if target_msa_map.get((r[sku_col], r[channel_l3_col]), 0) == 1 else "❌", axis=1
     )
+
+    # Lakukan grouping final di tingkat SKU & Kategori untuk menghilangkan dimensi Channel dari visualisasi
+    # Gunakan aggfunc='sum' untuk Qty dan 'max' untuk status Target MSA (jika ada satu yang centang, maka baris gabungan tersebut centang)
+    pivot_qty = pivot_qty.groupby([sku_col, category_col]).agg({
+        avg_col_name: 'sum',
+        k_prev3: 'sum',
+        k_prev2: 'sum',
+        k_prev1: 'sum',
+        k_current: 'sum',
+        'TARGET MSA': lambda x: "✅" if "✅" in list(x) else "❌"
+    }).reset_index()
 
     # Kalkulasi Akurat Baris Total Summary Value (IDR) Berdasarkan Seluruh Data Terfilter
     val_m3 = df_filtered[df_filtered['PERIOD_KEY'] == k_prev3][value_metric_col].sum()
@@ -209,9 +216,10 @@ if not df_filtered.empty or not df_targets.empty:
     val_m6 = df_filtered[df_filtered['PERIOD_KEY'] == k_current][value_metric_col].sum()
     avg_val_3m = math.ceil((val_m3 + val_m4 + val_m5) / 3)
 
-    # Rename Kolom untuk representasi UI agar rapi
+    # Susun ulang kolom UI tanpa menyertakan Channel Level 3
+    pivot_qty = pivot_qty[[sku_col, category_col, avg_col_name, k_prev3, k_prev2, k_prev1, k_current, 'TARGET MSA']]
     pivot_qty.columns = [
-        "PRODUCT SKU NAME", "CATEGORY", "CHANNEL LEVEL 3", avg_col_name, 
+        "PRODUCT SKU NAME", "CATEGORY", avg_col_name, 
         col_name_prev3, col_name_prev2, col_name_prev1, col_name_current, 
         "TARGET MSA"
     ]
@@ -221,7 +229,6 @@ if not df_filtered.empty or not df_targets.empty:
     total_row_dict = {
         "PRODUCT SKU NAME": "TOTAL SUMMARY",
         "CATEGORY": "ALL VALUE (IDR)",
-        "CHANNEL LEVEL 3": "",
         avg_col_name: avg_val_3m,
         col_name_prev3: val_m3,
         col_name_prev2: val_m4,
