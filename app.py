@@ -17,17 +17,17 @@ st.markdown(
     f"""
     <div style='background: linear-gradient(135deg, {SECONDARY} 0%, #1E40AF 100%); padding: 30px; border-radius: 16px; color: white; margin-bottom: 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);'>
         <h1 style='margin: 0; font-size: 2rem; font-weight: 800; letter-spacing: -0.02em;'>Betadine Sales Dashboard</h1>
-        <p style='margin: 8px 0 0 0; font-size: 0.8rem; opacity: 0.9;'>Platform pusat data peninjauan kinerja penjualan aktual (Sell-In).</p>
+        <p style='margin: 8px 0 0 0; font-size: 0.8rem; opacity: 0.9;'>Platform pusat data peninjauan kinerja penjualan aktual (Sell-In) & Target Kepatuhan MSA.</p>
     </div>
     """, 
     unsafe_allow_html=True
 )
 
-# ─── INGESTION DATA VIA UTILS ────────────────────────────────────────────────
-df_raw = load_data_all(worksheet_name="sellinbysku")
+# ─── INGESTION DATA VIA UTILS (MENGGUNAKAN TABEL BARU) ───────────────────────
+df_raw = load_data_all(worksheet_name="sellinbysku_with_msa")
 
 if df_raw.empty:
-    st.error("❌ Data dari database 'sellinbysku' kosong atau gagal terhubung.")
+    st.error("❌ Data dari database 'sellinbysku_with_msa' kosong atau gagal terhubung.")
     st.stop()
 
 df_proc = df_raw.copy()
@@ -56,11 +56,15 @@ cust_name_col = find_column_safely(["inova_id_cust_name", "NAMA OUTLET", "cust_n
 dist_cust_col = find_column_safely(["dist_cust_id", "ID APL/PPG", "dist_id"], "dist_cust_id")
 channel_l3_col = find_column_safely(["CHANNEL LEVEL 3", "channel_level_3", "CHANNEL_L3"], "CHANNEL LEVEL 3")
 
+# RESOLVER BARU: Mendeteksi kolom hasil lookup MSA dari Supabase View Anda
+msa_listing_col = find_column_safely(["STATUS_LISTING_MSA", "STATUS_LISTING", "status_listing_msa"], "status_listing_msa")
+
 # ─── CLEANING & TYPE CONVERSIONS ─────────────────────────────────────────────
 df_proc[year_col] = pd.to_numeric(df_proc[year_col], errors='coerce').fillna(2026).astype(int)
 df_proc[month_col] = pd.to_numeric(df_proc[month_col], errors='coerce').fillna(6).astype(int)
 df_proc[value_metric_col] = pd.to_numeric(df_proc[value_metric_col], errors='coerce').fillna(0.0)
 df_proc[qty_metric_col] = pd.to_numeric(df_proc[qty_metric_col], errors='coerce').fillna(0.0)
+df_proc[msa_listing_col] = pd.to_numeric(df_proc[msa_listing_col], errors='coerce').fillna(0).astype(int)
 
 df_proc[category_col] = df_proc[category_col].fillna("WOUND").astype(str).str.strip().str.upper()
 df_proc[sku_col] = df_proc[sku_col].fillna("UNASSIGNED").astype(str).str.strip()
@@ -71,27 +75,6 @@ df_proc[channel_l3_col] = df_proc[channel_l3_col].fillna("UNASSIGNED").astype(st
 
 TARGET_REGION_TEST = "REGION 1" 
 df_proc = df_proc[df_proc[region_col].astype(str).str.upper().str.strip() == TARGET_REGION_TEST.upper()]
-
-# ─── LOGIKA INTEGRASI TABEL SUPABASE: msa_recommendation ─────────────────────
-df_msa = load_data_all(worksheet_name="msa_recommendation")
-msa_ready = False
-
-if not df_msa.empty:
-    df_msa.columns = df_msa.columns.str.strip()
-    msa_sku_col = next((c for c in df_msa.columns if c.upper() in ["SKU NAME", "SKU_NAME", "PRODUCT SKU NAME"]), None)
-    msa_l3_col = next((c for c in df_msa.columns if c.upper() in ["CHANNEL LEVEL 3", "CHANNEL_LEVEL_3", "CHANNEL LEVEL3"]), None)
-    msa_listing_col = next((c for c in df_msa.columns if c.upper() in ["STATUS LISTING", "STATUS_LISTING", "LISTING"]), None)
-    
-    # PERBAIKAN: Deteksi nama kolom kategori msa secara dinamis (case-insensitive)
-    msa_cat_col = next((c for c in df_msa.columns if c.upper() in ["CATEGORY", "KATEGORI", "PRODUCT CATEGORY"]), None)
-    
-    if msa_sku_col and msa_l3_col and msa_listing_col and msa_cat_col:
-        df_msa[msa_sku_col] = df_msa[msa_sku_col].astype(str).str.strip()
-        df_msa[msa_l3_col] = df_msa[msa_l3_col].astype(str).str.strip().str.upper()
-        df_msa[msa_listing_col] = pd.to_numeric(df_msa[msa_listing_col], errors='coerce').fillna(0).astype(int)
-        msa_ready = True
-else:
-    st.warning("⚠️ Gagal memvalidasi listing karena tabel 'msa_recommendation' tidak ditemukan atau kosong.")
 
 # ─── MAIN FILTER PANEL ───────────────────────────────────────────────────────
 st.subheader("⚙️ Panel Kontrol & Filter Analisis")
@@ -158,6 +141,9 @@ avg_col_name = f"AVG QTY 3M ({month_names_map[m_prev3]}-{month_names_map[m_prev1
 df_matrix_4m = df_matrix[df_matrix[month_col].isin(target_months_indices)].copy()
 
 # ─── RENDER TABEL UTAMA ──────────────────────────────────────────────────────
+# Karena tabel baru membawa info target, indikator kesiapan bernilai True selama df_proc tersedia
+msa_ready = True 
+
 if not df_matrix_4m.empty or msa_ready:
     
     if not df_matrix_4m.empty:
@@ -175,44 +161,29 @@ if not df_matrix_4m.empty or msa_ready:
         if m_idx not in pivot_qty.columns:
             pivot_qty[m_idx] = 0.0
 
-    # 2. Suntikkan SKU MSA yang tidak memiliki transaksi kuantiti
-    if msa_ready:
-        if not df_matrix_4m.empty:
-            active_channels_l3 = df_matrix_4m[channel_l3_col].unique()
-        else:
-            active_channels_l3 = df_proc[channel_l3_col].unique()
-
-        df_targets = df_msa[
-            (df_msa[msa_listing_col] == 1) & 
-            (df_msa[msa_l3_col].isin(active_channels_l3))
-        ]
-        
-        existing_skus = pivot_qty[sku_col].unique() if not pivot_qty.empty else []
-        missing_skus = df_targets[~df_targets[msa_sku_col].isin(existing_skus)][msa_sku_col].unique()
-        
-        if len(missing_skus) > 0:
-            new_rows = []
-            for m_sku in missing_skus:
-                # Cek dari master transaksi df_proc terlebih dahulu
-                match_cat_series = df_proc[df_proc[sku_col] == m_sku][category_col]
-                if not match_cat_series.empty:
-                    match_cat = str(match_cat_series.iloc[0]).strip().upper()
-                else:
-                    # PERBAIKAN: Jika SKU murni baru, ambil dari kolom category df_msa yang sudah dideteksi & ubah ke UPPERCASE (Capslock)
-                    match_cat_series_msa = df_targets[df_targets[msa_sku_col] == m_sku][msa_cat_col]
-                    match_cat = str(match_cat_series_msa.iloc[0]).strip().upper() if not match_cat_series_msa.empty else "WOUND"
+    # 2. BERSIH & AMAN: Suntikkan SKU MSA yang tidak memiliki transaksi kuantiti langsung dari 1 tabel terpadu
+    df_targets = df_matrix[df_matrix[msa_listing_col] == 1]
+    
+    existing_skus = pivot_qty[sku_col].unique() if not pivot_qty.empty else []
+    missing_skus = df_targets[~df_targets[sku_col].isin(existing_skus)][sku_col].unique()
+    
+    if len(missing_skus) > 0:
+        new_rows = []
+        for m_sku in missing_skus:
+            match_cat_series = df_targets[df_targets[sku_col] == m_sku][category_col]
+            match_cat = str(match_cat_series.iloc[0]).strip().upper() if not match_cat_series.empty else "WOUND"
+            
+            # PROTEKSI FILTER KATEGORI
+            if selected_category != "All Categories" and match_cat != selected_category:
+                continue
                 
-                # PROTEKSI FILTER: Pastikan SKU yang disuntikkan lolos kriteria Filter Kategori aktif di UI
-                if selected_category != "All Categories" and match_cat != selected_category:
-                    continue
-                    
-                row_data = {sku_col: m_sku, category_col: match_cat}
-                for m_idx in target_months_indices:
-                    row_data[m_idx] = 0.0
-                new_rows.append(row_data)
-                
-            if new_rows:
-                pivot_qty = pd.concat([pivot_qty, pd.DataFrame(new_rows)], ignore_index=True)
+            row_data = {sku_col: m_sku, category_col: match_cat}
+            for m_idx in target_months_indices:
+                row_data[m_idx] = 0.0
+            new_rows.append(row_data)
+            
+        if new_rows:
+            pivot_qty = pd.concat([pivot_qty, pd.DataFrame(new_rows)], ignore_index=True)
 
     # Hitung rata-rata QTY 3M
     pivot_qty[avg_col_name] = pivot_qty[[m_prev3, m_prev2, m_prev1]].mean(axis=1).apply(lambda x: math.ceil(x))
@@ -221,14 +192,13 @@ if not df_matrix_4m.empty or msa_ready:
     final_view_cols = [sku_col, category_col, avg_col_name, m_prev3, m_prev2, m_prev1, m_current]
     pivot_qty = pivot_qty.reindex(columns=final_view_cols, fill_value=0.0)
     
-    # Tambahkan tanda centang Target MSA
+    # Tambahkan tanda centang Target MSA secara instan tanpa query luar
     pivot_qty['Target MSA'] = "❌"
-    if msa_ready:
-        for idx, row in pivot_qty.iterrows():
-            current_sku = row[sku_col]
-            is_listed = df_msa[(df_msa[msa_sku_col] == current_sku) & (df_msa[msa_listing_col] == 1)]
-            if not is_listed.empty:
-                pivot_qty.at[idx, 'Target MSA'] = "✅"
+    for idx, row in pivot_qty.iterrows():
+        current_sku = row[sku_col]
+        is_listed = df_matrix[(df_matrix[sku_col] == current_sku) & (df_matrix[msa_listing_col] == 1)]
+        if not is_listed.empty:
+            pivot_qty.at[idx, 'Target MSA'] = "✅"
 
     # 🔥 LOGIKA SINKRONISASI BARIS TOTAL RUPIAH:
     valid_skus_list = pivot_qty[sku_col].unique()
