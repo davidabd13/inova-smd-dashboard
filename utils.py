@@ -58,6 +58,7 @@ def load_data_all(worksheet_name: str) -> pd.DataFrame:
         
     db_table_map = {
         "sellinbysku": "sellinbysku",
+        "sellinbysku_with_msa": "sellinbysku_with_msa",
         "NEW RAW": "new_raw",
         "msa_recommendation": "msa_recommendation",
     }
