@@ -152,13 +152,14 @@ col_name_prev1 = f"{month_names_map[m_prev1]} {selected_year}"
 col_name_current = f"{month_names_map[m_current]} {selected_year}"
 avg_col_name = f"AVG QTY 3M ({month_names_map[m_prev3]}-{month_names_map[m_prev1]})"
 
-df_matrix = df_matrix[df_matrix[month_col].isin(target_months_indices)]
+df_matrix_4m = df_matrix[df_matrix[month_col].isin(target_months_indices)].copy()
 
 # ─── RENDER TABEL UTAMA ──────────────────────────────────────────────────────
-if not df_matrix.empty or msa_ready:
+if not df_matrix_4m.empty or msa_ready:
     
-    if not df_matrix.empty:
-        pivot_qty = df_matrix.pivot_table(
+    # 1. Kembalikan ke Pivot QTY murni (Menjamin data QTY 100% muncul dan akurat)
+    if not df_matrix_4m.empty:
+        pivot_qty = df_matrix_4m.pivot_table(
             index=[sku_col, category_col],
             columns=month_col,
             values=qty_metric_col,
@@ -172,9 +173,10 @@ if not df_matrix.empty or msa_ready:
         if m_idx not in pivot_qty.columns:
             pivot_qty[m_idx] = 0.0
 
+    # 2. Suntikkan SKU MSA yang tidak memiliki transaksi kuantiti
     if msa_ready:
-        if not df_matrix.empty:
-            active_channels_l3 = df_matrix[channel_l3_col].unique()
+        if not df_matrix_4m.empty:
+            active_channels_l3 = df_matrix_4m[channel_l3_col].unique()
         else:
             active_channels_l3 = df_proc[channel_l3_col].unique()
 
@@ -199,11 +201,14 @@ if not df_matrix.empty or msa_ready:
                 
             pivot_qty = pd.concat([pivot_qty, pd.DataFrame(new_rows)], ignore_index=True)
 
+    # Hitung rata-rata QTY 3M
     pivot_qty[avg_col_name] = pivot_qty[[m_prev3, m_prev2, m_prev1]].mean(axis=1).apply(lambda x: math.ceil(x))
 
+    # Reindex kolom angka bulan murni sebelum diubah namanya menjadi visual text
     final_view_cols = [sku_col, category_col, avg_col_name, m_prev3, m_prev2, m_prev1, m_current]
     pivot_qty = pivot_qty.reindex(columns=final_view_cols, fill_value=0.0)
     
+    # Tambahkan tanda centang Target MSA
     pivot_qty['Target MSA'] = "❌"
     if msa_ready:
         for idx, row in pivot_qty.iterrows():
@@ -212,31 +217,18 @@ if not df_matrix.empty or msa_ready:
             if not is_listed.empty:
                 pivot_qty.at[idx, 'Target MSA'] = "✅"
 
-    # 🔥 AMANKAN DATA PIVOT NUMERIK SEBELUM DI-RENAME MENJADI STRING FORMAT VISUAL
-    # Hitung total value menggunakan master price ratio dari transaksi terfilter
-    # Langkah ini mencegah lonjakan atau pembengkakan nilai summary akibat filter 'All Outlets'
-    sku_price_map = {}
-    if not df_matrix.empty:
-        # Hitung harga per unit rata-rata untuk setiap SKU yang terfilter valid
-        sku_sums = df_matrix.groupby(sku_col).agg({value_metric_col: 'sum', qty_metric_col: 'sum'})
-        for s_name, s_row in sku_sums.iterrows():
-            if s_row[qty_metric_col] > 0:
-                sku_price_map[s_name] = s_row[value_metric_col] / s_row[qty_metric_col]
-            else:
-                sku_price_map[s_name] = 0.0
-
-    val_m3, val_m4, val_m5, val_m6 = 0.0, 0.0, 0.0, 0.0
-    for idx, row in pivot_qty.iterrows():
-        s_name = row[sku_col]
-        price = sku_price_map.get(s_name, 0.0)
-        val_m3 += row[m_prev3] * price
-        val_m4 += row[m_prev2] * price
-        val_m5 += row[m_prev1] * price
-        val_m6 += row[m_current] * price
-        
+    # 🔥 LOGIKA AMAN BARIS TOTAL RUPIAH: 
+    # Hanya jumlahkan value dari baris SKU yang valid berada di dalam hasil filter pivot_qty
+    valid_skus_list = pivot_qty[sku_col].unique()
+    df_matrix_valid = df_matrix_4m[df_matrix_4m[sku_col].isin(valid_skus_list)]
+    
+    val_m3 = df_matrix_valid[df_matrix_valid[month_col] == m_prev3][value_metric_col].sum()
+    val_m4 = df_matrix_valid[df_matrix_valid[month_col] == m_prev2][value_metric_col].sum()
+    val_m5 = df_matrix_valid[df_matrix_valid[month_col] == m_prev1][value_metric_col].sum()
+    val_m6 = df_matrix_valid[df_matrix_valid[month_col] == m_current][value_metric_col].sum()
     avg_val_3m = math.ceil((val_m3 + val_m4 + val_m5) / 3)
 
-    # Berikan nama visual resmi pada kolom tabel
+    # Ubah nama kolom visual tabel
     pivot_qty.columns = [
         "PRODUCT SKU NAME", 
         "CATEGORY", 
