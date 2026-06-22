@@ -36,6 +36,13 @@ if df_raw.empty:
     st.stop()
 
 df_proc = df_raw.copy()
+st.write(f"Baris Awal dari Supabase: {len(df_raw)}")
+
+# Cek keunikan nama region yang ada di database asli Anda
+st.write("Daftar Region unik di DB:", df_raw[region_col].unique())
+
+df_region1 = df_raw[df_raw[region_col].astype(str).str.upper().str.strip() == "REGION 1"]
+st.write(f"Baris setelah filter REGION 1: {len(df_region1)}")
 
 # ─── BULLETPROOF COLUMN RESOLVER ─────────────────────────────────────────────
 raw_cols = list(df_proc.columns)
