@@ -121,7 +121,7 @@ with col1:
 
 with col2:
     available_months = sorted(list(df_proc[df_proc[year_col] == selected_year][month_col].unique()), reverse=True)
-    selected_month = st.selectbox("📆 Bulan Target Basis", available_months if available_months else [6], index=0)
+    selected_month = st.selectbox("📆 Bulan", available_months if available_months else [6], index=0)
 
 with col3:
     available_categories = ["All Categories"] + sorted(list(df_proc[category_col].unique()))
