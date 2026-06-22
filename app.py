@@ -6,24 +6,16 @@ from utils import load_data_all, inject_css, render_footer, SECONDARY
 
 # ─── CONFIG & STYLING ────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Betadine Sales Dashboard",
+    page_title="Betadine Sales Dashboard - Audit Mode",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 inject_css()
 
-# ─── HERO BANNER ─────────────────────────────────────────────────────────────
-st.markdown(
-    f"""
-    <div style='background: linear-gradient(135deg, {SECONDARY} 0%, #1E40AF 100%); padding: 30px; border-radius: 16px; color: white; margin-bottom: 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);'>
-        <h1 style='margin: 0; font-size: 2rem; font-weight: 800; letter-spacing: -0.02em;'>Betadine Sales Dashboard</h1>
-        <p style='margin: 8px 0 0 0; font-size: 0.8rem; opacity: 0.9;'>Platform pusat data peninjauan kinerja penjualan aktual (Sell-In) & Target Kepatuhan MSA - Khusus Region 1.</p>
-    </div>
-    """, 
-    unsafe_allow_html=True
-)
+st.title("🧪 Mode Audit & Validasi Data")
+st.caption("Halaman ini digunakan untuk mencocokkan angka dashboard dengan database asli Supabase.")
 
-# ─── INGESTION DATA VIA UTILS ────────────────────────────────────────────────
+# ─── INGESTION DATA ──────────────────────────────────────────────────────────
 @st.cache_data(ttl=3600)
 def get_cached_data():
     return load_data_all(worksheet_name="sellinbysku_with_msa")
@@ -31,294 +23,72 @@ def get_cached_data():
 df_raw = get_cached_data()
 
 if df_raw.empty:
-    st.error("❌ Data dari database 'sellinbysku_with_msa' kosong atau gagal terhubung.")
+    st.error("❌ Data dari database kosong.")
     st.stop()
 
-df_proc = df_raw.copy()
-
-# ─── BULLETPROOF COLUMN RESOLVER ─────────────────────────────────────────────
-raw_cols = list(df_proc.columns)
+# ─── RESOLVE KOLOM ──────────────────────────────────────────────────────────
+raw_cols = list(df_raw.columns)
 raw_cols_upper = [str(c).strip().upper() for c in raw_cols]
 
 def find_column_safely(possible_names, default_name):
     for name in possible_names:
         if name.upper() in raw_cols_upper:
             return raw_cols[raw_cols_upper.index(name.upper())]
-    df_proc[default_name] = 0.0
     return default_name
 
 region_col = find_column_safely(["INDO5_TEAM_SPV_REGION", "INDO5_TO", "REGION", "WILAYAH"], "REGION")
 year_col = find_column_safely(["YEAR", "YEAR_NUM", "TAHUN", "year"], "YEAR")
 month_col = find_column_safely(["MONTH", "MONTH_NUM", "BULAN", "month"], "MONTH")
-sku_col = find_column_safely(["inova_id_sku_name", "SKU NAME", "sku_name", "PRODUCT SKU NAME"], "PRODUCT SKU NAME")
-category_col = find_column_safely(["CATEGORY", "KATEGORI", "category", "PRODUCT CATEGORY"], "CATEGORY")
 value_metric_col = find_column_safely(["SUM OF VALUE", "VALUE", "value", "ACTUAL VALUE", "sum_of_value"], "Sum of Value")
 qty_metric_col = find_column_safely(["SUM OF QTY", "QTY", "qty", "ACTUAL QTY", "sum_of_qty"], "Sum of Qty")
 
-cust_code_col = find_column_safely(["inova_id_cust_code", "INOVA CODE", "cust_code"], "inova_id_cust_code")
-cust_name_col = find_column_safely(["inova_id_cust_name", "NAMA OUTLET", "cust_name", "OUTLET NAME"], "inova_id_cust_name")
-dist_cust_col = find_column_safely(["dist_cust_id", "ID APL/PPG", "dist_id"], "dist_cust_id")
-channel_l3_col = find_column_safely(["CHANNEL LEVEL 3", "channel_level_3", "CHANNEL_L3"], "CHANNEL LEVEL 3")
-msa_listing_col = find_column_safely(["STATUS_LISTING_MSA", "STATUS_LISTING", "status_listing_msa"], "status_listing_msa")
+# Standardisasi Tipe Data asli
+df_raw[year_col] = pd.to_numeric(df_raw[year_col], errors='coerce').fillna(2026).astype(int)
+df_raw[month_col] = pd.to_numeric(df_raw[month_col], errors='coerce').fillna(6).astype(int)
+df_raw[value_metric_col] = pd.to_numeric(df_raw[value_metric_col], errors='coerce').fillna(0.0)
+df_raw[qty_metric_col] = pd.to_numeric(df_raw[qty_metric_col], errors='coerce').fillna(0.0)
 
-# ─── CLEANING & TYPE CONVERSIONS ─────────────────────────────────────────────
-df_proc[year_col] = pd.to_numeric(df_proc[year_col], errors='coerce').fillna(2026).astype(int)
-df_proc[month_col] = pd.to_numeric(df_proc[month_col], errors='coerce').fillna(6).astype(int)
-df_proc[value_metric_col] = pd.to_numeric(df_proc[value_metric_col], errors='coerce').fillna(0.0)
-df_proc[qty_metric_col] = pd.to_numeric(df_proc[qty_metric_col], errors='coerce').fillna(0.0)
-df_proc[msa_listing_col] = pd.to_numeric(df_proc[msa_listing_col], errors='coerce').fillna(0).astype(int)
+# ─── PANEL AUDIT 1: CEK TOTAL DATABASE ASLI (TANPA FILTER) ─────────────────────
+st.markdown("### 📊 1. Total Nilai di Database Asli Supabase (Tanpa Filter Apapun)")
+total_value_supabase = df_raw[value_metric_col].sum()
+total_qty_supabase = df_raw[qty_metric_col].sum()
 
-# Filter Mutlak Awal: Sesuai tujuan utama hanya mengambil data Region 1
-df_proc = df_proc[df_proc[region_col].astype(str).str.upper().str.strip() == "REGION 1"]
+c1, c2, c3 = st.columns(3)
+with c1:
+    st.metric("Total Baris di DB", f"{len(df_raw):,}")
+with c2:
+    st.metric("Total Value (IDR) di DB", f"Rp {total_value_supabase:,.0f}")
+with c3:
+    st.metric("Total Qty (PCS) di DB", f"{total_qty_supabase:,.0f} PCS")
 
-# Handle string kosong / NaN
-for col in [sku_col, cust_code_col, cust_name_col, dist_cust_col]:
-    df_proc[col] = df_proc[col].fillna("UNASSIGNED").astype(str).str.strip()
-df_proc[category_col] = df_proc[category_col].fillna("WOUND").astype(str).str.strip().str.upper()
+# ─── PANEL AUDIT 2: BREAKDOWN PER REGION ──────────────────────────────────────
+st.markdown("### 🗺️ 2. Breakdown Nilai Berdasarkan Isi Kolom Region")
+st.write("Silakan cocokkan nama region di bawah ini dengan angka yang Anda pegang di excel manual:")
 
-# ─── MAIN FILTER PANEL ───────────────────────────────────────────────────────
-st.subheader("⚙️ Panel Kontrol & Filter Analisis")
+df_region_breakdown = df_raw.groupby(region_col).agg(
+    Total_Baris=(region_col, 'count'),
+    Total_Value=(value_metric_col, 'sum'),
+    Total_Qty=(qty_metric_col, 'sum')
+).reset_index()
 
-col1, col2, col3 = st.columns(3)
-with col1:
-    available_years = sorted(list(df_proc[year_col].unique()), reverse=True)
-    selected_year = st.selectbox("📅 Tahun Target", available_years if available_years else [2026], index=0)
+st.dataframe(df_region_breakdown, use_container_width=True)
 
-with col2:
-    available_months = sorted(list(df_proc[df_proc[year_col] == selected_year][month_col].unique()), reverse=True)
-    selected_month = st.selectbox("📆 Bulan Target Basis", available_months if available_months else [6], index=0)
+# ─── PANEL AUDIT 3: BREAKDOWN PER BULAN & TAHUN (KHUSUS REGION 1) ─────────────
+st.markdown("### 📅 3. Breakdown Tren Per Bulan & Tahun (Khusus REGION 1)")
+st.write("Jika Anda menerapkan filter `REGION 1`, berikut adalah total nilai asli per bulan dari database:")
 
-with col3:
-    available_categories = ["All Categories"] + sorted(list(df_proc[category_col].unique()))
-    selected_category = st.selectbox("📂 Filter Kategori Produk", available_categories, index=0)
+# Terapkan filter Region 1 secara aman
+df_r1_only = df_raw[df_raw[region_col].astype(str).str.upper().str.strip() == "REGION 1"]
 
-col4, col5, col6 = st.columns(3)
-with col4:
-    unique_codes = ["All iNova Codes"] + sorted(list(df_proc[cust_code_col].unique()))
-    selected_cust_code = st.selectbox("🔑 iNova Code", unique_codes, index=0)
-
-with col5:
-    unique_names = ["All Outlets"] + sorted(list(df_proc[cust_name_col].unique()))
-    selected_cust_name = st.selectbox("🏪 Nama Outlet", unique_names, index=0)
-
-with col6:
-    unique_dist = ["All ID APL/PPG"] + sorted(list(df_proc[dist_cust_col].unique()))
-    selected_dist_cust = st.selectbox("🆔 ID APL/PPG", unique_dist, index=0)
-
-# ─── PROSES FILTERING DATA BERTAHAP ──────────────────────────────────────────
-df_filtered = df_proc.copy()
-
-if selected_category != "All Categories":
-    df_filtered = df_filtered[df_filtered[category_col] == selected_category]
-if selected_cust_code != "All iNova Codes":
-    df_filtered = df_filtered[df_filtered[cust_code_col] == selected_cust_code]
-if selected_cust_name != "All Outlets":
-    df_filtered = df_filtered[df_filtered[cust_name_col] == selected_cust_name]
-if selected_dist_cust != "All ID APL/PPG":
-    df_filtered = df_filtered[df_filtered[dist_cust_col] == selected_dist_cust]
-
-# Penamaan bulan lokal ringkas
-month_names_map = {
-    1:"Jan", 2:"Feb", 3:"Mar", 4:"Apr", 5:"Mei", 6:"Jun",
-    7:"Jul", 8:"Agu", 9:"Sep", 10:"Okt", 11:"Nov", 12:"Des"
-}
-
-# Generate 4-Month Lookback Period
-target_periods = []
-for i in [3, 2, 1, 0]:
-    m = selected_month - i
-    y = selected_year
-    if m <= 0:
-        m += 12 
-        y -= 1
-    target_periods.append((y, m))
-
-(y_prev3, m_prev3), (y_prev2, m_prev2), (y_prev1, m_prev1), (y_current, m_current) = target_periods
-
-col_name_prev3 = f"{month_names_map[m_prev3]} {y_prev3}"
-col_name_prev2 = f"{month_names_map[m_prev2]} {y_prev2}"
-col_name_prev1 = f"{month_names_map[m_prev1]} {y_prev1}"
-col_name_current = f"{month_names_map[m_current]} {y_current}"
-avg_col_name = f"AVG QTY 3M ({month_names_map[m_prev3]}-{month_names_map[m_prev1]})"
-
-# Kunci string penentu dimensi waktu (YYYY_MM)
-df_filtered['PERIOD_KEY'] = df_filtered[year_col].astype(str) + "_" + df_filtered[month_col].astype(str).str.zfill(2)
-
-k_prev3 = f"{y_prev3}_{str(m_prev3).zfill(2)}"
-k_prev2 = f"{y_prev2}_{str(m_prev2).zfill(2)}"
-k_prev1 = f"{y_prev1}_{str(m_prev1).zfill(2)}"
-k_current = f"{y_current}_{str(m_current).zfill(2)}"
-target_keys = [k_prev3, k_prev2, k_prev1, k_current]
-
-# Iris data secara efisien (Data Transaksi Aktual & Target)
-df_matrix_4m = df_filtered[df_filtered['PERIOD_KEY'].isin(target_keys)].copy()
-df_targets = df_filtered[(df_filtered[year_col] == selected_year) & (df_filtered[msa_listing_col] == 1)]
-
-# ─── RENDER TABEL UTAMA ──────────────────────────────────────────────────────
-if not df_matrix_4m.empty or not df_targets.empty:
+if not df_r1_only.empty:
+    df_monthly_breakdown = df_r1_only.groupby([year_col, month_col]).agg(
+        Total_Baris=(value_metric_col, 'count'),
+        Total_Value_IDR=(value_metric_col, 'sum'),
+        Total_Qty_PCS=(qty_metric_col, 'sum')
+    ).reset_index().sort_values(by=[year_col, month_col], ascending=False)
     
-    if not df_matrix_4m.empty:
-        pivot_qty = df_matrix_4m.pivot_table(
-            index=[sku_col, category_col],
-            columns='PERIOD_KEY',
-            values=qty_metric_col,
-            aggfunc='sum',
-            fill_value=0.0
-        ).reset_index()
-    else:
-        pivot_qty = pd.DataFrame(columns=[sku_col, category_col] + target_keys)
-
-    for k in target_keys:
-        if k not in pivot_qty.columns:
-            pivot_qty[k] = 0.0
-
-    # Mengambil set unik target MSA yang VALID berdasarkan filter dropdown berjalan
-    msa_skus_set = set(df_targets[sku_col].unique()) if not df_targets.empty else set()
-    
-    # Injeksi target SKU MSA yang belum memiliki transaksi penjualan aktual (agar baris tidak berlebih)
-    existing_skus = set(pivot_qty[sku_col].unique()) if not pivot_qty.empty else set()
-    missing_skus = msa_skus_set - existing_skus
-    
-    if len(missing_skus) > 0:
-        new_rows = []
-        for m_sku in missing_skus:
-            match_cat_series = df_targets[df_targets[sku_col] == m_sku][category_col]
-            match_cat = str(match_cat_series.iloc[0]).strip().upper() if not match_cat_series.empty else "WOUND"
-            
-            row_data = {sku_col: m_sku, category_col: match_cat}
-            for k in target_keys:
-                row_data[k] = 0.0
-            new_rows.append(row_data)
-            
-        if new_rows:
-            pivot_qty = pd.concat([pivot_qty, pd.DataFrame(new_rows)], ignore_index=True)
-
-    # Menghitung Rata-rata 3 Bulan ke Belakang (Sebelum Current Month)
-    pivot_qty[avg_col_name] = pivot_qty[[k_prev3, k_prev2, k_prev1]].mean(axis=1).apply(lambda x: math.ceil(x))
-
-    # Re-ordering susunan kolom tabel utama
-    final_view_cols = [sku_col, category_col, avg_col_name, k_prev3, k_prev2, k_prev1, k_current]
-    pivot_qty = pivot_qty.reindex(columns=final_view_cols, fill_value=0.0)
-    
-    # Kolom Validasi Target Kepatuhan MSA paling kanan
-    pivot_qty['TARGET MSA'] = pivot_qty[sku_col].apply(lambda x: "✅" if x in msa_skus_set else "❌")
-
-    # Kalkulasi Akurat Baris Total Summary Value (IDR) Berdasarkan Filter Berjalan
-    valid_skus_list = pivot_qty[sku_col].unique()
-    df_matrix_valid = df_matrix_4m[df_matrix_4m[sku_col].isin(valid_skus_list)]
-    
-    val_m3 = df_matrix_valid[df_matrix_valid['PERIOD_KEY'] == k_prev3][value_metric_col].sum()
-    val_m4 = df_matrix_valid[df_matrix_valid['PERIOD_KEY'] == k_prev2][value_metric_col].sum()
-    val_m5 = df_matrix_valid[df_matrix_valid['PERIOD_KEY'] == k_prev1][value_metric_col].sum()
-    val_m6 = df_matrix_valid[df_matrix_valid['PERIOD_KEY'] == k_current][value_metric_col].sum()
-    avg_val_3m = math.ceil((val_m3 + val_m4 + val_m5) / 3)
-
-    # Rename Kolom untuk representasi UI
-    pivot_qty.columns = [
-        "PRODUCT SKU NAME", "CATEGORY", avg_col_name, 
-        col_name_prev3, col_name_prev2, col_name_prev1, col_name_current, 
-        "TARGET MSA"
-    ]
-
-    pivot_qty = pivot_qty.sort_values(by=["TARGET MSA", col_name_current], ascending=[False, False])
-
-    total_row_dict = {
-        "PRODUCT SKU NAME": "TOTAL SUMMARY",
-        "CATEGORY": "ALL VALUE (IDR)",
-        avg_col_name: avg_val_3m,
-        col_name_prev3: val_m3,
-        col_name_prev2: val_m4,
-        col_name_prev1: val_m5,
-        col_name_current: val_m6,
-        "TARGET MSA": ""
-    }
-    
-    # df_pivot_final berisikan NILAI ANGKA BERSIH (Sangat aman untuk di-download ke Excel)
-    df_pivot_final = pd.concat([pivot_qty, pd.DataFrame([total_row_dict])], ignore_index=True)
-
-    # ─── LOGIKA FORMATTING KHUSUS TAMPILAN WEB (HTML) ────────────────────────
-    def format_cells_with_rules(df):
-        formatted_df = df.copy()
-        last_row_idx = df.index[-1]
-        loop_cols = [avg_col_name, col_name_prev3, col_name_prev2, col_name_prev1, col_name_current]
-        
-        for col in loop_cols:
-            formatted_df[col] = formatted_df[col].astype(object)
-        
-        for idx, row in df.iterrows():
-            if idx == last_row_idx:
-                for col in loop_cols:
-                    formatted_df.at[idx, col] = f"<b>Rp {row[col]:,.0f}</b>"
-            else:
-                v_avg = row[avg_col_name]
-                v_m3 = row[col_name_prev3]
-                v_m4 = row[col_name_prev2]
-                v_m5 = row[col_name_prev1]
-                v_m6 = row[col_name_current]
-                
-                formatted_df.at[idx, avg_col_name] = f"{v_avg:,.0f} PCS"
-                
-                # Bulan Historis Terlama (M-3)
-                if v_m3 == 0:
-                    formatted_df.at[idx, col_name_prev3] = f"<span style='color: #DC2626; font-weight: 600;'>0 PCS</span>"
-                else:
-                    formatted_df.at[idx, col_name_prev3] = f"{v_m3:,.0f} PCS"
-
-                # Evaluasi Bulan M-2 terhadap M-3 (Merah jika turun dari bulan sebelumnya)
-                if v_m4 == 0:
-                    formatted_df.at[idx, col_name_prev2] = f"<span style='color: #DC2626; font-weight: 600;'>0 PCS</span>"
-                elif v_m4 < v_m3:
-                    formatted_df.at[idx, col_name_prev2] = f"<span style='color: #D97706;'>{v_m4:,.0f} PCS ↓</span>"
-                else:
-                    formatted_df.at[idx, col_name_prev2] = f"{v_m4:,.0f} PCS"
-                
-                # Evaluasi Bulan M-1 terhadap M-2
-                if v_m5 == 0:
-                    formatted_df.at[idx, col_name_prev1] = f"<span style='color: #DC2626; font-weight: 600;'>0 PCS</span>"
-                elif v_m5 < v_m4:
-                    formatted_df.at[idx, col_name_prev1] = f"<span style='color: #D97706;'>{v_m5:,.0f} PCS ↓</span>"
-                else:
-                    formatted_df.at[idx, col_name_prev1] = f"{v_m5:,.0f} PCS"
-                    
-                # Evaluasi Bulan Berjalan (Current) terhadap M-1
-                if v_m6 == 0:
-                    formatted_df.at[idx, col_name_current] = f"<span style='color: #DC2626; font-weight: 600;'>0 PCS</span>"
-                elif v_m6 < v_m5:
-                    formatted_df.at[idx, col_name_current] = f"<span style='color: #D97706;'>{v_m6:,.0f} PCS ↓</span>"
-                else:
-                    formatted_df.at[idx, col_name_current] = f"{v_m6:,.0f} PCS"
-                    
-        return formatted_df
-
-    df_display = format_cells_with_rules(df_pivot_final)
-
-    st.markdown(
-        f"""
-        <style>
-            div[data-testid="stDataFrame"] table {{ background-color: #FFFFFF !important; color: #1E293B !important; }}
-            div[data-testid="stDataFrame"] th {{ background-color: {SECONDARY} !important; color: #FFFFFF !important; font-weight: 700 !important; }}
-        </style>
-        """, 
-        unsafe_allow_html=True
-    )
-    
-    # Render tabel HTML interaktif yang bersih dan berwarna warni
-    st.write(df_display.to_html(escape=False, index=False), unsafe_allow_html=True)
-    st.write("<br>", unsafe_allow_html=True)
-    
-    # Komponen Tombol Download menggunakan Dataframe Bersih (df_pivot_final)
-    col_space, col_btn = st.columns([8, 2])
-    with col_btn:
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df_pivot_final.to_excel(writer, index=False, sheet_name='3M_Sales_Matrix')
-        st.download_button(
-            label="📥 Download Pivot Report (Excel)",
-            data=output.getvalue(),
-            file_name=f"Region1_Performance_Month_{selected_month}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+    st.dataframe(df_monthly_breakdown, use_container_width=True)
 else:
-    st.warning("⚠️ Tidak ada data transaksi aktual pada kombinasi filter yang Anda pilih.")
+    st.warning("⚠️ Tidak ada data sama sekali yang lolos teks 'REGION 1'. Periksa tabel nomor 2 di atas untuk melihat penulisan yang benar.")
 
 render_footer()
