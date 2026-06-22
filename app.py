@@ -82,7 +82,10 @@ if not df_msa.empty:
     msa_l3_col = next((c for c in df_msa.columns if c.upper() in ["CHANNEL LEVEL 3", "CHANNEL_LEVEL_3", "CHANNEL LEVEL3"]), None)
     msa_listing_col = next((c for c in df_msa.columns if c.upper() in ["STATUS LISTING", "STATUS_LISTING", "LISTING"]), None)
     
-    if msa_sku_col and msa_l3_col and msa_listing_col:
+    # PERBAIKAN: Deteksi nama kolom kategori msa secara dinamis (case-insensitive)
+    msa_cat_col = next((c for c in df_msa.columns if c.upper() in ["CATEGORY", "KATEGORI", "PRODUCT CATEGORY"]), None)
+    
+    if msa_sku_col and msa_l3_col and msa_listing_col and msa_cat_col:
         df_msa[msa_sku_col] = df_msa[msa_sku_col].astype(str).str.strip()
         df_msa[msa_l3_col] = df_msa[msa_l3_col].astype(str).str.strip().str.upper()
         df_msa[msa_listing_col] = pd.to_numeric(df_msa[msa_listing_col], errors='coerce').fillna(0).astype(int)
@@ -157,7 +160,6 @@ df_matrix_4m = df_matrix[df_matrix[month_col].isin(target_months_indices)].copy(
 # ─── RENDER TABEL UTAMA ──────────────────────────────────────────────────────
 if not df_matrix_4m.empty or msa_ready:
     
-    # 1. Kembalikan ke Pivot QTY murni (Menjamin data QTY 100% muncul dan akurat)
     if not df_matrix_4m.empty:
         pivot_qty = df_matrix_4m.pivot_table(
             index=[sku_col, category_col],
@@ -191,15 +193,26 @@ if not df_matrix_4m.empty or msa_ready:
         if len(missing_skus) > 0:
             new_rows = []
             for m_sku in missing_skus:
-                match_cat_series = df_targets[df_targets[msa_sku_col] == m_sku][category_col]
-                match_cat = str(match_cat_series.iloc[0]).strip().upper() if not match_cat_series.empty else "WOUND"
+                # Cek dari master transaksi df_proc terlebih dahulu
+                match_cat_series = df_proc[df_proc[sku_col] == m_sku][category_col]
+                if not match_cat_series.empty:
+                    match_cat = str(match_cat_series.iloc[0]).strip().upper()
+                else:
+                    # PERBAIKAN: Jika SKU murni baru, ambil dari kolom category df_msa yang sudah dideteksi & ubah ke UPPERCASE (Capslock)
+                    match_cat_series_msa = df_targets[df_targets[msa_sku_col] == m_sku][msa_cat_col]
+                    match_cat = str(match_cat_series_msa.iloc[0]).strip().upper() if not match_cat_series_msa.empty else "WOUND"
                 
+                # PROTEKSI FILTER: Pastikan SKU yang disuntikkan lolos kriteria Filter Kategori aktif di UI
+                if selected_category != "All Categories" and match_cat != selected_category:
+                    continue
+                    
                 row_data = {sku_col: m_sku, category_col: match_cat}
                 for m_idx in target_months_indices:
                     row_data[m_idx] = 0.0
                 new_rows.append(row_data)
                 
-            pivot_qty = pd.concat([pivot_qty, pd.DataFrame(new_rows)], ignore_index=True)
+            if new_rows:
+                pivot_qty = pd.concat([pivot_qty, pd.DataFrame(new_rows)], ignore_index=True)
 
     # Hitung rata-rata QTY 3M
     pivot_qty[avg_col_name] = pivot_qty[[m_prev3, m_prev2, m_prev1]].mean(axis=1).apply(lambda x: math.ceil(x))
@@ -217,8 +230,7 @@ if not df_matrix_4m.empty or msa_ready:
             if not is_listed.empty:
                 pivot_qty.at[idx, 'Target MSA'] = "✅"
 
-    # 🔥 LOGIKA AMAN BARIS TOTAL RUPIAH: 
-    # Hanya jumlahkan value dari baris SKU yang valid berada di dalam hasil filter pivot_qty
+    # 🔥 LOGIKA SINKRONISASI BARIS TOTAL RUPIAH:
     valid_skus_list = pivot_qty[sku_col].unique()
     df_matrix_valid = df_matrix_4m[df_matrix_4m[sku_col].isin(valid_skus_list)]
     
@@ -310,8 +322,8 @@ if not df_matrix_4m.empty or msa_ready:
     st.markdown(
         f"""
         <style>
-            div[data-testid="stDataFrame"] table {{ background-color: #FFFFFF !important; color: #1E293B !important; }}
-            div[data-testid="stDataFrame"] th {{ background-color: {SECONDARY} !important; color: #FFFFFF !important; font-weight: 700 !important; }}
+            div[data-testid=\"stDataFrame\"] table {{ background-color: #FFFFFF !important; color: #1E293B !important; }}
+            div[data-testid=\"stDataFrame\"] th {{ background-color: {SECONDARY} !important; color: #FFFFFF !important; font-weight: 700 !important; }}
         </style>
         """, 
         unsafe_allow_html=True
