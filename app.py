@@ -5,7 +5,6 @@ import math
 from utils import load_data_all, inject_css, render_footer, SECONDARY
 
 # ─── CONFIG & STYLING ────────────────────────────────────────────────────────
-# FIX TYPO: Menggunakan st.set_page_config yang benar
 st.set_page_config(
     page_title="Betadine Sales Dashboard",
     layout="wide",
@@ -44,9 +43,7 @@ def find_column_safely(possible_names, default_name):
     df_proc[default_name] = 0.0
     return default_name
 
-# Kunci kolom region komprehensif
 region_col = find_column_safely(["INDO5_TEAM_SPV_REGION", "INDO5_TO", "REGION", "WILAYAH"], "REGION")
-
 year_col = find_column_safely(["YEAR", "YEAR_NUM", "TAHUN", "year"], "YEAR")
 month_col = find_column_safely(["MONTH", "MONTH_NUM", "BULAN", "month"], "MONTH")
 sku_col = find_column_safely(["inova_id_sku_name", "SKU NAME", "sku_name", "PRODUCT SKU NAME"], "PRODUCT SKU NAME")
@@ -54,7 +51,6 @@ category_col = find_column_safely(["CATEGORY", "KATEGORI", "category", "PRODUCT 
 value_metric_col = find_column_safely(["SUM OF VALUE", "VALUE", "value", "ACTUAL VALUE", "sum_of_value"], "Sum of Value")
 qty_metric_col = find_column_safely(["SUM OF QTY", "QTY", "qty", "ACTUAL QTY", "sum_of_qty"], "Sum of Qty")
 
-# Kolom filter tambahan baru & Kolom Kunci Channel Level 3
 cust_code_col = find_column_safely(["inova_id_cust_code", "INOVA CODE", "cust_code"], "inova_id_cust_code")
 cust_name_col = find_column_safely(["inova_id_cust_name", "NAMA OUTLET", "cust_name", "OUTLET NAME"], "inova_id_cust_name")
 dist_cust_col = find_column_safely(["dist_cust_id", "ID APL/PPG", "dist_id"], "dist_cust_id")
@@ -73,19 +69,15 @@ df_proc[cust_name_col] = df_proc[cust_name_col].fillna("UNASSIGNED").astype(str)
 df_proc[dist_cust_col] = df_proc[dist_cust_col].fillna("UNASSIGNED").astype(str).str.strip()
 df_proc[channel_l3_col] = df_proc[channel_l3_col].fillna("UNASSIGNED").astype(str).str.strip().str.upper()
 
-# 🔒 [TESTING] SILAKAN SESUAIKAN NAMA REGION DI SINI UNTUK KEPENTINGAN SHARDING
 TARGET_REGION_TEST = "REGION 1" 
 df_proc = df_proc[df_proc[region_col].astype(str).str.upper().str.strip() == TARGET_REGION_TEST.upper()]
 
 # ─── LOGIKA INTEGRASI TABEL SUPABASE: msa_recommendation ─────────────────────
 df_msa = load_data_all(worksheet_name="msa_recommendation")
-
 msa_ready = False
 
 if not df_msa.empty:
     df_msa.columns = df_msa.columns.str.strip()
-    
-    # Resolver kolom dinamis untuk tabel msa
     msa_sku_col = next((c for c in df_msa.columns if c.upper() in ["SKU NAME", "SKU_NAME", "PRODUCT SKU NAME"]), None)
     msa_l3_col = next((c for c in df_msa.columns if c.upper() in ["CHANNEL LEVEL 3", "CHANNEL_LEVEL_3", "CHANNEL LEVEL3"]), None)
     msa_listing_col = next((c for c in df_msa.columns if c.upper() in ["STATUS LISTING", "STATUS_LISTING", "LISTING"]), None)
@@ -98,10 +90,9 @@ if not df_msa.empty:
 else:
     st.warning("⚠️ Gagal memvalidasi listing karena tabel 'msa_recommendation' tidak ditemukan atau kosong.")
 
-# ─── MAIN FILTER PANEL (DI ATAS PIVOT TABLE) ─────────────────────────────────
+# ─── MAIN FILTER PANEL ───────────────────────────────────────────────────────
 st.subheader("⚙️ Panel Kontrol & Filter Analisis")
 
-# Baris Filter Utama 1: Waktu & Kategori
 col1, col2, col3 = st.columns(3)
 with col1:
     available_years = sorted(list(df_proc[year_col].unique()), reverse=True)
@@ -115,7 +106,6 @@ with col3:
     available_categories = ["All Categories"] + sorted(list(df_proc[category_col].unique()))
     selected_category = st.selectbox("📂 Filter Kategori Produk", available_categories, index=0)
 
-# Baris Filter Utama 2: Dimensi Toko & Distributor
 col4, col5, col6 = st.columns(3)
 with col4:
     unique_codes = ["All iNova Codes"] + sorted(list(df_proc[cust_code_col].unique()))
@@ -141,7 +131,7 @@ if selected_cust_name != "All Outlets":
 if selected_dist_cust != "All ID APL/PPG":
     df_matrix = df_matrix[df_matrix[dist_cust_col] == selected_dist_cust]
 
-# ─── LOGIKA PENENTUAN 4 BULAN BERJALAN SECARA DINAMIS ────────────────────────
+# ─── LOGIKA PENENTUAN 4 BULAN BERJALAN ───────────────────────────────────────
 month_names_map = {
     1:"Jan", 2:"Feb", 3:"Mar", 4:"Apr", 5:"Mei", 6:"Jun",
     7:"Jul", 8:"Agu", 9:"Sep", 10:"Okt", 11:"Nov", 12:"Des"
@@ -162,14 +152,13 @@ col_name_prev1 = f"{month_names_map[m_prev1]} {selected_year}"
 col_name_current = f"{month_names_map[m_current]} {selected_year}"
 avg_col_name = f"AVG QTY 3M ({month_names_map[m_prev3]}-{month_names_map[m_prev1]})"
 
-# Amankan data subset bulan berjalan sebelum pivot dilakukan
+# Filter data berdasarkan rentang 4 bulan berjalan sebelum pivot dilakukan
 df_matrix = df_matrix[df_matrix[month_col].isin(target_months_indices)]
 
 # ─── RENDER TABEL UTAMA ──────────────────────────────────────────────────────
-
 if not df_matrix.empty or msa_ready:
     
-    # 1. BUAT PIVOT TABLE MURNI DARI TRANSAKSI AKTUAL TERLEBIH DAHULU (Menjamin data Maret & April utuh tanpa crash metadata)
+    # 1. Buat tabel pivot murni dari transaksi riil terlebih dahulu
     if not df_matrix.empty:
         pivot_qty = df_matrix.pivot_table(
             index=[sku_col, category_col],
@@ -181,12 +170,12 @@ if not df_matrix.empty or msa_ready:
     else:
         pivot_qty = pd.DataFrame(columns=[sku_col, category_col] + target_months_indices)
 
-    # Pastikan seluruh rentang kolom bulan tersedia di dataframe hasil pivot
+    # Pastikan semua kolom bulan target terbuat di dataframe hasil pivot
     for m_idx in target_months_indices:
         if m_idx not in pivot_qty.columns:
             pivot_qty[m_idx] = 0.0
 
-    # 2. SELEKSI TARGET WAJIB DARI MSA KEMUDIAN SUNTIKKAN JIKA BELUM ADA DI TRANSAKSI (Tidak mengganggu transaksi riil)
+    # 2. Ambil target wajib status 1 dari MSA untuk menyuntikkan SKU yang belum ada transaksi
     if msa_ready:
         if not df_matrix.empty:
             active_channels_l3 = df_matrix[channel_l3_col].unique()
@@ -214,17 +203,15 @@ if not df_matrix.empty or msa_ready:
                 
             pivot_qty = pd.concat([pivot_qty, pd.DataFrame(new_rows)], ignore_index=True)
 
-    # Kalkulasi rata-rata 3 bulan sebelum target berjalan secara aman berbasis posisi index angka bulan
+    # 🔥 FIX UTAMA: Hitung rata-rata 3M SEBELUM kolom dipotong/di-reindex!
     pivot_qty[avg_col_name] = pivot_qty[[m_prev3, m_prev2, m_prev1]].mean(axis=1).apply(lambda x: math.ceil(x))
 
-    # Reindex kolom menggunakan susunan asli bawaan
-    final_view_cols = [sku_col, category_col, avg_col_name, m_prev2, m_prev1, m_current]
+    # 🔥 FIX KEDUA: Reindex dengan memasukkan kolom angka bulan yang lengkap tanpa membuang Maret
+    final_view_cols = [sku_col, category_col, avg_col_name, m_prev3, m_prev2, m_prev1, m_current]
     pivot_qty = pivot_qty.reindex(columns=final_view_cols, fill_value=0.0)
     
-    # 📌 POSISI BARU: Tambahkan kolom 'Target MSA' di posisi PALING KANAN (paling akhir setelah bulan saat ini)
+    # Tambahkan status Target MSA ke kolom baru paling kanan
     pivot_qty['Target MSA'] = "❌"
-    
-    # Isi penanda centang secara dinamis berdasarkan database master msa
     if msa_ready:
         for idx, row in pivot_qty.iterrows():
             current_sku = row[sku_col]
@@ -232,13 +219,22 @@ if not df_matrix.empty or msa_ready:
             if not is_listed.empty:
                 pivot_qty.at[idx, 'Target MSA'] = "✅"
 
-    # Setel nama header kolom visual akhir (Target MSA diletakkan paling belakang)
-    pivot_qty.columns = ["PRODUCT SKU NAME", "CATEGORY", avg_col_name, col_name_prev2, col_name_prev1, col_name_current, "TARGET MSA"]
+    # Setel nama header secara presisi agar sinkron dengan urutan kolom final_view_cols + Target MSA
+    pivot_qty.columns = [
+        "PRODUCT SKU NAME", 
+        "CATEGORY", 
+        avg_col_name, 
+        col_name_prev3,   # Maret 2026
+        col_name_prev2,   # April 2026
+        col_name_prev1,   # Mei 2026
+        col_name_current, # Juni 2026
+        "TARGET MSA"      # Paling kanan
+    ]
 
-    # Urutkan prioritas: Target MSA (✅ di atas), lalu pencapaian kuantiti bulan saat ini tertinggi
+    # Urutan prioritas: Target MSA (✅ di atas), lalu pencapaian kuantiti bulan berjalan (Juni) tertinggi
     pivot_qty = pivot_qty.sort_values(by=["TARGET MSA", col_name_current], ascending=[False, False])
 
-    # Ambil sum value untuk ringkasan baris total akhir
+    # Ambil sum value komprehensif untuk ringkasan baris total akhir
     val_m3 = df_matrix[df_matrix[month_col] == m_prev3][value_metric_col].sum() if not df_matrix.empty else 0.0
     val_m4 = df_matrix[df_matrix[month_col] == m_prev2][value_metric_col].sum() if not df_matrix.empty else 0.0
     val_m5 = df_matrix[df_matrix[month_col] == m_prev1][value_metric_col].sum() if not df_matrix.empty else 0.0
@@ -249,6 +245,7 @@ if not df_matrix.empty or msa_ready:
         "PRODUCT SKU NAME": "TOTAL SUMMARY",
         "CATEGORY": "ALL VALUE (IDR)",
         avg_col_name: avg_val_3m,
+        col_name_prev3: val_m3,
         col_name_prev2: val_m4,
         col_name_prev1: val_m5,
         col_name_current: val_m6,
@@ -261,7 +258,7 @@ if not df_matrix.empty or msa_ready:
     def format_cells_with_rules(df):
         formatted_df = df.copy()
         last_row_idx = df.index[-1]
-        loop_cols = [avg_col_name, col_name_prev2, col_name_prev1, col_name_current]
+        loop_cols = [avg_col_name, col_name_prev3, col_name_prev2, col_name_prev1, col_name_current]
         
         for col in loop_cols:
             formatted_df[col] = formatted_df[col].astype(object)
@@ -272,32 +269,42 @@ if not df_matrix.empty or msa_ready:
                     formatted_df.at[idx, col] = f"Rp {row[col]:,.0f}"
             else:
                 v_avg = row[avg_col_name]
-                v_prev2 = row[col_name_prev2]
-                v_prev1 = row[col_name_prev1]
-                v_current = row[col_name_current]
+                v_m3 = row[col_name_prev3]
+                v_m4 = row[col_name_prev2]
+                v_m5 = row[col_name_prev1]
+                v_m6 = row[col_name_current]
                 
                 formatted_df.at[idx, avg_col_name] = f"{v_avg:,.0f} PCS"
                 
-                if v_prev2 == 0:
+                # Format Maret 2026
+                if v_m3 == 0:
+                    formatted_df.at[idx, col_name_prev3] = f"<span style='color: #DC2626; font-weight: 600;'>0 PCS</span>"
+                else:
+                    formatted_df.at[idx, col_name_prev3] = f"{v_m3:,.0f} PCS"
+
+                # Format April 2026
+                if v_m4 == 0:
                     formatted_df.at[idx, col_name_prev2] = f"<span style='color: #DC2626; font-weight: 600;'>0 PCS</span>"
-                elif v_avg > v_prev2:
-                    formatted_df.at[idx, col_name_prev2] = f"<span style='color: #D97706;'>{v_prev2:,.0f} PCS</span>"
+                elif v_m3 > v_m4:
+                    formatted_df.at[idx, col_name_prev2] = f"<span style='color: #D97706;'>{v_m4:,.0f} PCS</span>"
                 else:
-                    formatted_df.at[idx, col_name_prev2] = f"{v_prev2:,.0f} PCS"
+                    formatted_df.at[idx, col_name_prev2] = f"{v_m4:,.0f} PCS"
                 
-                if v_prev1 == 0:
+                # Format Mei 2026
+                if v_m5 == 0:
                     formatted_df.at[idx, col_name_prev1] = f"<span style='color: #DC2626; font-weight: 600;'>0 PCS</span>"
-                elif v_prev2 > v_prev1:
-                    formatted_df.at[idx, col_name_prev1] = f"<span style='color: #D97706;'>{v_prev1:,.0f} PCS</span>"
+                elif v_m4 > v_m5:
+                    formatted_df.at[idx, col_name_prev1] = f"<span style='color: #D97706;'>{v_m5:,.0f} PCS</span>"
                 else:
-                    formatted_df.at[idx, col_name_prev1] = f"{v_prev1:,.0f} PCS"
+                    formatted_df.at[idx, col_name_prev1] = f"{v_m5:,.0f} PCS"
                     
-                if v_current == 0:
+                # Format Juni 2026
+                if v_m6 == 0:
                     formatted_df.at[idx, col_name_current] = f"<span style='color: #DC2626; font-weight: 600;'>0 PCS</span>"
-                elif v_prev1 > v_current:
-                    formatted_df.at[idx, col_name_current] = f"<span style='color: #D97706;'>{v_current:,.0f} PCS</span>"
+                elif v_m5 > v_m6:
+                    formatted_df.at[idx, col_name_current] = f"<span style='color: #D97706;'>{v_m6:,.0f} PCS</span>"
                 else:
-                    formatted_df.at[idx, col_name_current] = f"{v_current:,.0f} PCS"
+                    formatted_df.at[idx, col_name_current] = f"{v_m6:,.0f} PCS"
                     
         return formatted_df
 
