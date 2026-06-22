@@ -56,7 +56,6 @@ cust_name_col = find_column_safely(["inova_id_cust_name", "NAMA OUTLET", "cust_n
 dist_cust_col = find_column_safely(["dist_cust_id", "ID APL/PPG", "dist_id"], "dist_cust_id")
 channel_l3_col = find_column_safely(["CHANNEL LEVEL 3", "channel_level_3", "CHANNEL_L3"], "CHANNEL LEVEL 3")
 
-# RESOLVER BARU: Mendeteksi kolom hasil lookup MSA dari Supabase View Anda
 msa_listing_col = find_column_safely(["STATUS_LISTING_MSA", "STATUS_LISTING", "status_listing_msa"], "status_listing_msa")
 
 # ─── CLEANING & TYPE CONVERSIONS ─────────────────────────────────────────────
@@ -105,42 +104,56 @@ with col6:
     unique_dist = ["All ID APL/PPG"] + sorted(list(df_proc[dist_cust_col].unique()))
     selected_dist_cust = st.selectbox("🆔 ID APL/PPG", unique_dist, index=0)
 
-# ─── PROSES FILTERING DATA BERTAHAP ──────────────────────────────────────────
-df_matrix = df_proc[df_proc[year_col] == selected_year].copy()
+# ─── PROSES FILTERING DATA BERTAHAP & RUNNING PERIODE LINTAS TAHUN ───────────
+df_filtered = df_proc.copy()
 
 if selected_category != "All Categories":
-    df_matrix = df_matrix[df_matrix[category_col] == selected_category]
+    df_filtered = df_filtered[df_filtered[category_col] == selected_category]
 if selected_cust_code != "All iNova Codes":
-    df_matrix = df_matrix[df_matrix[cust_code_col] == selected_cust_code]
+    df_filtered = df_filtered[df_filtered[cust_code_col] == selected_cust_code]
 if selected_cust_name != "All Outlets":
-    df_matrix = df_matrix[df_matrix[cust_name_col] == selected_cust_name]
+    df_filtered = df_filtered[df_filtered[cust_name_col] == selected_cust_name]
 if selected_dist_cust != "All ID APL/PPG":
-    df_matrix = df_matrix[df_matrix[dist_cust_col] == selected_dist_cust]
+    df_filtered = df_filtered[df_filtered[dist_cust_col] == selected_dist_cust]
 
-# ─── FIX LOGIKA: PENENTUAN URUTAN BULAN BERJALAN YANG PRECIS ────────────────
+# Memetakan nama bulan ringkas
 month_names_map = {
     1:"Jan", 2:"Feb", 3:"Mar", 4:"Apr", 5:"Mei", 6:"Jun",
     7:"Jul", 8:"Agu", 9:"Sep", 10:"Okt", 11:"Nov", 12:"Des"
 }
 
-# Membuat urutan kronologis dari yang paling lampau ke bulan terpilih
-target_months_indices = []
+# Membuat kombinasi periode (Tahun, Bulan) kronologis absolut untuk lookback 4 bulan
+target_periods = []
 for i in [3, 2, 1, 0]:
     m = selected_month - i
+    y = selected_year
     if m <= 0:
         m += 12 
-    target_months_indices.append(m)
+        y -= 1
+    target_periods.append((y, m))
 
-# Sekarang pemetaan urutan elemen dijamin tepat berurutan (Maret, April, Mei, Juni)
-m_prev3, m_prev2, m_prev1, m_current = target_months_indices
+(y_prev3, m_prev3), (y_prev2, m_prev2), (y_prev1, m_prev1), (y_current, m_current) = target_periods
 
-col_name_prev3 = f"{month_names_map[m_prev3]} {selected_year}"
-col_name_prev2 = f"{month_names_map[m_prev2]} {selected_year}"
-col_name_prev1 = f"{month_names_map[m_prev1]} {selected_year}"
-col_name_current = f"{month_names_map[m_current]} {selected_year}"
+col_name_prev3 = f"{month_names_map[m_prev3]} {y_prev3}"
+col_name_prev2 = f"{month_names_map[m_prev2]} {y_prev2}"
+col_name_prev1 = f"{month_names_map[m_prev1]} {y_prev1}"
+col_name_current = f"{month_names_map[m_current]} {y_current}"
 avg_col_name = f"AVG QTY 3M ({month_names_map[m_prev3]}-{month_names_map[m_prev1]})"
 
-df_matrix_4m = df_matrix[df_matrix[month_col].isin(target_months_indices)].copy()
+# Membuat Kolom String Key Gabungan (YYYY_MM) untuk mencegah bentrokan angka bulan antar tahun berbeda
+df_filtered['PERIOD_KEY'] = df_filtered[year_col].astype(str) + "_" + df_filtered[month_col].astype(str).str.zfill(2)
+
+k_prev3 = f"{y_prev3}_{str(m_prev3).zfill(2)}"
+k_prev2 = f"{y_prev2}_{str(m_prev2).zfill(2)}"
+k_prev1 = f"{y_prev1}_{str(m_prev1).zfill(2)}"
+k_current = f"{y_current}_{str(m_current).zfill(2)}"
+target_keys = [k_prev3, k_prev2, k_prev1, k_current]
+
+# Memotong data eksklusif hanya untuk 4 periode target berjalan
+df_matrix_4m = df_filtered[df_filtered['PERIOD_KEY'].isin(target_keys)].copy()
+
+# Mendapatkan data referensi target MSA untuk tahun terpilih
+df_targets = df_filtered[(df_filtered[year_col] == selected_year) & (df_filtered[msa_listing_col] == 1)]
 
 # ─── RENDER TABEL UTAMA ──────────────────────────────────────────────────────
 msa_ready = True 
@@ -150,21 +163,19 @@ if not df_matrix_4m.empty or msa_ready:
     if not df_matrix_4m.empty:
         pivot_qty = df_matrix_4m.pivot_table(
             index=[sku_col, category_col],
-            columns=month_col,
+            columns='PERIOD_KEY',
             values=qty_metric_col,
             aggfunc='sum',
             fill_value=0.0
         ).reset_index()
     else:
-        pivot_qty = pd.DataFrame(columns=[sku_col, category_col] + target_months_indices)
+        pivot_qty = pd.DataFrame(columns=[sku_col, category_col] + target_keys)
 
-    for m_idx in target_months_indices:
-        if m_idx not in pivot_qty.columns:
-            pivot_qty[m_idx] = 0.0
+    for k in target_keys:
+        if k not in pivot_qty.columns:
+            pivot_qty[k] = 0.0
 
     # Suntikkan SKU MSA yang tidak memiliki transaksi kuantiti langsung dari tabel terpadu
-    df_targets = df_matrix[df_matrix[msa_listing_col] == 1]
-    
     existing_skus = pivot_qty[sku_col].unique() if not pivot_qty.empty else []
     missing_skus = df_targets[~df_targets[sku_col].isin(existing_skus)][sku_col].unique()
     
@@ -178,39 +189,35 @@ if not df_matrix_4m.empty or msa_ready:
                 continue
                 
             row_data = {sku_col: m_sku, category_col: match_cat}
-            for m_idx in target_months_indices:
-                row_data[m_idx] = 0.0
+            for k in target_keys:
+                row_data[k] = 0.0
             new_rows.append(row_data)
             
         if new_rows:
             pivot_qty = pd.concat([pivot_qty, pd.DataFrame(new_rows)], ignore_index=True)
 
     # Hitung rata-rata QTY 3M
-    pivot_qty[avg_col_name] = pivot_qty[[m_prev3, m_prev2, m_prev1]].mean(axis=1).apply(lambda x: math.ceil(x))
+    pivot_qty[avg_col_name] = pivot_qty[[k_prev3, k_prev2, k_prev1]].mean(axis=1).apply(lambda x: math.ceil(x))
 
-    # Reindex kolom angka bulan murni sebelum diubah namanya menjadi visual text
-    final_view_cols = [sku_col, category_col, avg_col_name, m_prev3, m_prev2, m_prev1, m_current]
+    # Reindex kolom berdasarkan urutan kode key periode murni sebelum diubah namanya menjadi teks visual
+    final_view_cols = [sku_col, category_col, avg_col_name, k_prev3, k_prev2, k_prev1, k_current]
     pivot_qty = pivot_qty.reindex(columns=final_view_cols, fill_value=0.0)
     
-    # Tambahkan tanda centang Target MSA
-    pivot_qty['Target MSA'] = "❌"
-    for idx, row in pivot_qty.iterrows():
-        current_sku = row[sku_col]
-        is_listed = df_matrix[(df_matrix[sku_col] == current_sku) & (df_matrix[msa_listing_col] == 1)]
-        if not is_listed.empty:
-            pivot_qty.at[idx, 'Target MSA'] = "✅"
+    # Tambahkan tanda centang Target MSA berdasarkan data target tahun terpilih
+    msa_skus_set = set(df_targets[sku_col].unique())
+    pivot_qty['Target MSA'] = pivot_qty[sku_col].apply(lambda x: "✅" if x in msa_skus_set else "❌")
 
-    # 🔥 SINKRONISASI BARIS TOTAL RUPIAH:
+    # 🔥 SINKRONISASI BARIS TOTAL VALUE (IDR): Diambil akurat dari koordinat PERIOD_KEY masing-masing bulan
     valid_skus_list = pivot_qty[sku_col].unique()
     df_matrix_valid = df_matrix_4m[df_matrix_4m[sku_col].isin(valid_skus_list)]
     
-    val_m3 = df_matrix_valid[df_matrix_valid[month_col] == m_prev3][value_metric_col].sum()
-    val_m4 = df_matrix_valid[df_matrix_valid[month_col] == m_prev2][value_metric_col].sum()
-    val_m5 = df_matrix_valid[df_matrix_valid[month_col] == m_prev1][value_metric_col].sum()
-    val_m6 = df_matrix_valid[df_matrix_valid[month_col] == m_current][value_metric_col].sum()
+    val_m3 = df_matrix_valid[df_matrix_valid['PERIOD_KEY'] == k_prev3][value_metric_col].sum()
+    val_m4 = df_matrix_valid[df_matrix_valid['PERIOD_KEY'] == k_prev2][value_metric_col].sum()
+    val_m5 = df_matrix_valid[df_matrix_valid['PERIOD_KEY'] == k_prev1][value_metric_col].sum()
+    val_m6 = df_matrix_valid[df_matrix_valid['PERIOD_KEY'] == k_current][value_metric_col].sum()
     avg_val_3m = math.ceil((val_m3 + val_m4 + val_m5) / 3)
 
-    # Ubah nama kolom visual tabel
+    # Ubah nama kolom indeks pivot menjadi nama visual tabel
     pivot_qty.columns = [
         "PRODUCT SKU NAME", 
         "CATEGORY", 
