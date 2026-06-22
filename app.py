@@ -12,7 +12,7 @@ st.set_page_config(
 )
 inject_css()
 
-# ─── HERO BANNER RINGKAS ─────────────────────────────────────────────────────
+# ─── HERO BANNER ─────────────────────────────────────────────────────────────
 st.markdown(
     f"""
     <div style='background: linear-gradient(135deg, {SECONDARY} 0%, #1E40AF 100%); padding: 30px; border-radius: 16px; color: white; margin-bottom: 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);'>
@@ -61,19 +61,6 @@ dist_cust_col = find_column_safely(["dist_cust_id", "ID APL/PPG", "dist_id"], "d
 channel_l3_col = find_column_safely(["CHANNEL LEVEL 3", "channel_level_3", "CHANNEL_L3"], "CHANNEL LEVEL 3")
 msa_listing_col = find_column_safely(["STATUS_LISTING_MSA", "STATUS_LISTING", "status_listing_msa"], "status_listing_msa")
 
-# ─── 🔍 INSPEKSI DATA & DEBUGGING (Aman dari NameError) ────────────────────────
-st.markdown("### 🔍 Hasil Inspeksi Data Mentah")
-st.write(f"1. Total Baris Awal dari Supabase: **{len(df_raw):,}**")
-
-# Menampilkan semua variasi nama region unik di DB asli Anda
-unique_regions_in_db = df_raw[region_col].dropna().unique()
-st.write("2. Daftar Region unik di DB:", unique_regions_in_db)
-
-# Menghitung data yang lolos pencocokan string "REGION 1"
-df_test_filter = df_raw[df_raw[region_col].astype(str).str.upper().str.strip() == "REGION 1"]
-st.write(f"3. Total Baris yang lolos filter 'REGION 1': **{len(df_test_filter):,}**")
-st.markdown("---")
-
 # ─── CLEANING & TYPE CONVERSIONS ─────────────────────────────────────────────
 df_proc[year_col] = pd.to_numeric(df_proc[year_col], errors='coerce').fillna(2026).astype(int)
 df_proc[month_col] = pd.to_numeric(df_proc[month_col], errors='coerce').fillna(6).astype(int)
@@ -81,7 +68,7 @@ df_proc[value_metric_col] = pd.to_numeric(df_proc[value_metric_col], errors='coe
 df_proc[qty_metric_col] = pd.to_numeric(df_proc[qty_metric_col], errors='coerce').fillna(0.0)
 df_proc[msa_listing_col] = pd.to_numeric(df_proc[msa_listing_col], errors='coerce').fillna(0).astype(int)
 
-# Filter Utama: Pastikan penulisan sesuai dengan hasil inspeksi di atas
+# Filter Mutlak Awal: Sesuai tujuan utama hanya mengambil data Region 1
 df_proc = df_proc[df_proc[region_col].astype(str).str.upper().str.strip() == "REGION 1"]
 
 # Handle string kosong / NaN
@@ -90,7 +77,7 @@ for col in [sku_col, cust_code_col, cust_name_col, dist_cust_col]:
 df_proc[category_col] = df_proc[category_col].fillna("WOUND").astype(str).str.strip().str.upper()
 
 # ─── MAIN FILTER PANEL ───────────────────────────────────────────────────────
-st.subheader("⚙️ Panel Kontrol & Filter Analisis (Region 1)")
+st.subheader("⚙️ Panel Kontrol & Filter Analisis")
 
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -163,7 +150,7 @@ k_prev1 = f"{y_prev1}_{str(m_prev1).zfill(2)}"
 k_current = f"{y_current}_{str(m_current).zfill(2)}"
 target_keys = [k_prev3, k_prev2, k_prev1, k_current]
 
-# Iris data secara efisien
+# Iris data secara efisien (Data Transaksi Aktual & Target)
 df_matrix_4m = df_filtered[df_filtered['PERIOD_KEY'].isin(target_keys)].copy()
 df_targets = df_filtered[(df_filtered[year_col] == selected_year) & (df_filtered[msa_listing_col] == 1)]
 
@@ -185,9 +172,12 @@ if not df_matrix_4m.empty or not df_targets.empty:
         if k not in pivot_qty.columns:
             pivot_qty[k] = 0.0
 
-    # Injeksi target SKU MSA yang belum memiliki transaksi aktual penjualan
-    existing_skus = pivot_qty[sku_col].unique() if not pivot_qty.empty else []
-    missing_skus = df_targets[~df_targets[sku_col].isin(existing_skus)][sku_col].unique()
+    # Mengambil set unik target MSA yang VALID berdasarkan filter dropdown berjalan
+    msa_skus_set = set(df_targets[sku_col].unique()) if not df_targets.empty else set()
+    
+    # Injeksi target SKU MSA yang belum memiliki transaksi penjualan aktual (agar baris tidak berlebih)
+    existing_skus = set(pivot_qty[sku_col].unique()) if not pivot_qty.empty else set()
+    missing_skus = msa_skus_set - existing_skus
     
     if len(missing_skus) > 0:
         new_rows = []
@@ -195,9 +185,6 @@ if not df_matrix_4m.empty or not df_targets.empty:
             match_cat_series = df_targets[df_targets[sku_col] == m_sku][category_col]
             match_cat = str(match_cat_series.iloc[0]).strip().upper() if not match_cat_series.empty else "WOUND"
             
-            if selected_category != "All Categories" and match_cat != selected_category:
-                continue
-                
             row_data = {sku_col: m_sku, category_col: match_cat}
             for k in target_keys:
                 row_data[k] = 0.0
@@ -209,15 +196,14 @@ if not df_matrix_4m.empty or not df_targets.empty:
     # Menghitung Rata-rata 3 Bulan ke Belakang (Sebelum Current Month)
     pivot_qty[avg_col_name] = pivot_qty[[k_prev3, k_prev2, k_prev1]].mean(axis=1).apply(lambda x: math.ceil(x))
 
-    # Re-ordering kolom tabel utama
+    # Re-ordering susunan kolom tabel utama
     final_view_cols = [sku_col, category_col, avg_col_name, k_prev3, k_prev2, k_prev1, k_current]
     pivot_qty = pivot_qty.reindex(columns=final_view_cols, fill_value=0.0)
     
     # Kolom Validasi Target Kepatuhan MSA paling kanan
-    msa_skus_set = set(df_targets[sku_col].unique())
     pivot_qty['TARGET MSA'] = pivot_qty[sku_col].apply(lambda x: "✅" if x in msa_skus_set else "❌")
 
-    # Kalkulasi Akurat Baris Total Summary Value (IDR)
+    # Kalkulasi Akurat Baris Total Summary Value (IDR) Berdasarkan Filter Berjalan
     valid_skus_list = pivot_qty[sku_col].unique()
     df_matrix_valid = df_matrix_4m[df_matrix_4m[sku_col].isin(valid_skus_list)]
     
@@ -278,7 +264,7 @@ if not df_matrix_4m.empty or not df_targets.empty:
                 else:
                     formatted_df.at[idx, col_name_prev3] = f"{v_m3:,.0f} PCS"
 
-                # Evaluasi Bulan M-2 terhadap M-3 (Merah jika turun, default jika naik)
+                # Evaluasi Bulan M-2 terhadap M-3 (Merah jika turun dari bulan sebelumnya)
                 if v_m4 == 0:
                     formatted_df.at[idx, col_name_prev2] = f"<span style='color: #DC2626; font-weight: 600;'>0 PCS</span>"
                 elif v_m4 < v_m3:
@@ -316,7 +302,7 @@ if not df_matrix_4m.empty or not df_targets.empty:
         unsafe_allow_html=True
     )
     
-    # Render tabel HTML interaktif yang berwarna warni
+    # Render tabel HTML interaktif yang bersih dan berwarna warni
     st.write(df_display.to_html(escape=False, index=False), unsafe_allow_html=True)
     st.write("<br>", unsafe_allow_html=True)
     
