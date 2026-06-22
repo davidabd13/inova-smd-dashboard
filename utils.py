@@ -43,15 +43,8 @@ def init_supabase() -> Client:
 def load_data_all(worksheet_name: str) -> pd.DataFrame:
     """
     Menarik seluruh data dari Supabase tanpa terpotong batas limit (Mendukung >100.000 baris)
-    menggunakan teknik urutan range pagination.
+    menggunakan teknik urutan range pagination langsung dari cloud database (Akurat & Real-time).
     """
-    local_file = f"{worksheet_name}.csv"
-    if os.path.exists(local_file):
-        try:
-            return pd.read_csv(local_file)
-        except Exception:
-            pass
-
     supabase = init_supabase()
     if not supabase:
         return pd.DataFrame()
