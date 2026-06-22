@@ -77,36 +77,23 @@ TARGET_REGION_TEST = "REGION 1"
 df_proc = df_proc[df_proc[region_col].astype(str).str.upper().str.strip() == TARGET_REGION_TEST.upper()]
 
 # ─── LOGIKA INTEGRASI TABEL SUPABASE: msa_recommendation ─────────────────────
-# Memuat master data rekomendasi dari Supabase melalui fungsi utils Anda
 df_msa = load_data_all(worksheet_name="msa_recommendation")
 
+msa_ready = False
+
 if not df_msa.empty:
-    # Standarisasi kolom msa_recommendation agar aman saat proses matching
     df_msa.columns = df_msa.columns.str.strip()
     
     # Resolver kolom dinamis untuk tabel msa
-    msa_sku_col = next((c for c in df_msa.columns if c.upper() in ["inova_id_sku_name", "SKU_NAME", "PRODUCT SKU NAME"]), None)
+    msa_sku_col = next((c for c in df_msa.columns if c.upper() in ["SKU NAME", "SKU_NAME", "PRODUCT SKU NAME"]), None)
     msa_l3_col = next((c for c in df_msa.columns if c.upper() in ["CHANNEL LEVEL 3", "CHANNEL_LEVEL_3", "CHANNEL LEVEL3"]), None)
     msa_listing_col = next((c for c in df_msa.columns if c.upper() in ["STATUS LISTING", "STATUS_LISTING", "LISTING"]), None)
     
     if msa_sku_col and msa_l3_col and msa_listing_col:
-        # Bersihkan data pembanding
         df_msa[msa_sku_col] = df_msa[msa_sku_col].astype(str).str.strip()
         df_msa[msa_l3_col] = df_msa[msa_l3_col].astype(str).str.strip().str.upper()
         df_msa[msa_listing_col] = pd.to_numeric(df_msa[msa_listing_col], errors='coerce').fillna(0).astype(int)
-        
-        # Ambil pasang kunci (SKU, Channel L3) yang lolos filter berangka 1
-        allowed_pairs = df_msa[df_msa[msa_listing_col] == 1][[msa_sku_col, msa_l3_col]].drop_duplicates()
-        allowed_pairs.columns = ['MATCH_SKU', 'MATCH_L3']
-        
-        # Lakukan Inner Join / Filter subset data utama menggunakan merge
-        df_proc = pd.merge(
-            df_proc,
-            allowed_pairs,
-            left_on=[sku_col, channel_l3_col],
-            right_on=['MATCH_SKU', 'MATCH_L3'],
-            how='inner'
-        ).drop(columns=['MATCH_SKU', 'MATCH_L3'])
+        msa_ready = True
 else:
     st.warning("⚠️ Gagal memvalidasi listing karena tabel 'msa_recommendation' tidak ditemukan atau kosong.")
 
@@ -121,7 +108,7 @@ with col1:
 
 with col2:
     available_months = sorted(list(df_proc[df_proc[year_col] == selected_year][month_col].unique()), reverse=True)
-    selected_month = st.selectbox("📆 Bulan", available_months if available_months else [6], index=0)
+    selected_month = st.selectbox("📆 Bulan Target Basis", available_months if available_months else [6], index=0)
 
 with col3:
     available_categories = ["All Categories"] + sorted(list(df_proc[category_col].unique()))
@@ -174,8 +161,42 @@ col_name_prev1 = f"{month_names_map[m_prev1]} {selected_year}"
 col_name_current = f"{month_names_map[m_current]} {selected_year}"
 avg_col_name = f"AVG QTY 3M ({month_names_map[m_prev3]}-{month_names_map[m_prev1]})"
 
-# Amankan data subset bulan berjalan
+# Amankan data subset bulan berjalan sebelum pivot dilakukan
 df_matrix = df_matrix[df_matrix[month_col].isin(target_months_indices)]
+
+# ─── MASTER MSA MERGING & INJECTION LOGIC ────────────────────────────────────
+if msa_ready and not df_matrix.empty:
+    # 1. Cari tahu Channel Level 3 apa saja yang aktif pada filter saat ini
+    active_channels_l3 = df_matrix[channel_l3_col].unique()
+    
+    # 2. Ambil semua target wajib (status listing = 1) di channel tersebut dari master MSA
+    df_targets = df_msa[
+        (df_msa[msa_listing_col] == 1) & 
+        (df_msa[msa_l3_col].isin(active_channels_l3))
+    ][[msa_sku_col, msa_l3_col]].drop_duplicates()
+    
+    if not df_targets.empty:
+        # Buat placeholder baris dummy untuk SKU wajib yang tidak memiliki record sama sekali di sellinbysku
+        existing_skus = df_matrix[sku_col].unique()
+        missing_target_skus = df_targets[~df_targets[msa_sku_col].isin(existing_skus)][msa_sku_col].unique()
+        
+        if len(missing_target_skus) > 0:
+            dummy_rows = []
+            base_row = df_matrix.iloc[0]
+            for m_sku in missing_target_skus:
+                # Ambil kategori yang sesuai dari master MSA untuk SKU bersangkutan jika ada
+                match_cat = df_msa[df_msa[msa_sku_col] == m_sku].iloc[0].get(category_col, base_row[category_col])
+                for m_idx in target_months_indices:
+                    dummy_rows.append({
+                        sku_col: m_sku,
+                        category_col: str(match_cat).strip().upper(),
+                        year_col: selected_year,
+                        month_col: m_idx,
+                        qty_metric_col: 0.0,
+                        value_metric_col: 0.0,
+                        channel_l3_col: base_row[channel_l3_col]
+                    })
+            df_matrix = pd.concat([df_matrix, pd.DataFrame(dummy_rows)], ignore_index=True)
 
 # ─── RENDER TABEL UTAMA ──────────────────────────────────────────────────────
 
@@ -200,9 +221,23 @@ if not df_matrix.empty:
     # Reindex kolom menggunakan urutan yang benar dan langsung beri nama label aslinya
     final_view_cols = [sku_col, category_col, avg_col_name, m_prev2, m_prev1, m_current]
     pivot_qty = pivot_qty.reindex(columns=final_view_cols, fill_value=0.0)
-    pivot_qty.columns = ["PRODUCT SKU NAME", "CATEGORY", avg_col_name, col_name_prev2, col_name_prev1, col_name_current]
+    
+    # Sisipkan kolom 'Target MSA' tepat setelah Kolom Category
+    pivot_qty.insert(2, 'Target MSA', "❌")
+    
+    # Isi simbol centang secara dinamis berdasarkan data msa_recommendation
+    if msa_ready:
+        for idx, row in pivot_qty.iterrows():
+            current_sku = row[sku_col]
+            is_listed = df_msa[(df_msa[msa_sku_col] == current_sku) & (df_msa[msa_listing_col] == 1)]
+            if not is_listed.empty:
+                pivot_qty.at[idx, 'Target MSA'] = "✅"
 
-    pivot_qty = pivot_qty.sort_values(by=col_name_current, ascending=False)
+    # Setel nama header kolom visual akhir
+    pivot_qty.columns = ["PRODUCT SKU NAME", "CATEGORY", "TARGET MSA", avg_col_name, col_name_prev2, col_name_prev1, col_name_current]
+
+    # Urutkan prioritas berdasarkan Target MSA (✅ di atas), lalu pencapaian kuantiti bulan berjalan tertinggi
+    pivot_qty = pivot_qty.sort_values(by=["TARGET MSA", col_name_current], ascending=[False, False])
 
     # Ambil sum value untuk ringkasan baris total akhir
     val_m3 = df_matrix[df_matrix[month_col] == m_prev3][value_metric_col].sum()
@@ -214,6 +249,7 @@ if not df_matrix.empty:
     total_row_dict = {
         "PRODUCT SKU NAME": "TOTAL SUMMARY",
         "CATEGORY": "ALL VALUE (IDR)",
+        "TARGET MSA": "",
         avg_col_name: avg_val_3m,
         col_name_prev2: val_m4,
         col_name_prev1: val_m5,
