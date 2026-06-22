@@ -24,7 +24,6 @@ st.markdown(
 )
 
 # ─── INGESTION DATA VIA UTILS ────────────────────────────────────────────────
-# Menjamin penarikan data penuh (~146rb baris didukung oleh resource memory Streamlit)
 @st.cache_data(ttl=3600)
 def get_cached_data():
     return load_data_all(worksheet_name="sellinbysku_with_msa")
@@ -36,13 +35,6 @@ if df_raw.empty:
     st.stop()
 
 df_proc = df_raw.copy()
-st.write(f"Baris Awal dari Supabase: {len(df_raw)}")
-
-# Cek keunikan nama region yang ada di database asli Anda
-st.write("Daftar Region unik di DB:", df_raw[region_col].unique())
-
-df_region1 = df_raw[df_raw[region_col].astype(str).str.upper().str.strip() == "REGION 1"]
-st.write(f"Baris setelah filter REGION 1: {len(df_region1)}")
 
 # ─── BULLETPROOF COLUMN RESOLVER ─────────────────────────────────────────────
 raw_cols = list(df_proc.columns)
@@ -69,6 +61,19 @@ dist_cust_col = find_column_safely(["dist_cust_id", "ID APL/PPG", "dist_id"], "d
 channel_l3_col = find_column_safely(["CHANNEL LEVEL 3", "channel_level_3", "CHANNEL_L3"], "CHANNEL LEVEL 3")
 msa_listing_col = find_column_safely(["STATUS_LISTING_MSA", "STATUS_LISTING", "status_listing_msa"], "status_listing_msa")
 
+# ─── 🔍 INSPEKSI DATA & DEBUGGING (Aman dari NameError) ────────────────────────
+st.markdown("### 🔍 Hasil Inspeksi Data Mentah")
+st.write(f"1. Total Baris Awal dari Supabase: **{len(df_raw):,}**")
+
+# Menampilkan semua variasi nama region unik di DB asli Anda
+unique_regions_in_db = df_raw[region_col].dropna().unique()
+st.write("2. Daftar Region unik di DB:", unique_regions_in_db)
+
+# Menghitung data yang lolos pencocokan string "REGION 1"
+df_test_filter = df_raw[df_raw[region_col].astype(str).str.upper().str.strip() == "REGION 1"]
+st.write(f"3. Total Baris yang lolos filter 'REGION 1': **{len(df_test_filter):,}**")
+st.markdown("---")
+
 # ─── CLEANING & TYPE CONVERSIONS ─────────────────────────────────────────────
 df_proc[year_col] = pd.to_numeric(df_proc[year_col], errors='coerce').fillna(2026).astype(int)
 df_proc[month_col] = pd.to_numeric(df_proc[month_col], errors='coerce').fillna(6).astype(int)
@@ -76,7 +81,7 @@ df_proc[value_metric_col] = pd.to_numeric(df_proc[value_metric_col], errors='coe
 df_proc[qty_metric_col] = pd.to_numeric(df_proc[qty_metric_col], errors='coerce').fillna(0.0)
 df_proc[msa_listing_col] = pd.to_numeric(df_proc[msa_listing_col], errors='coerce').fillna(0).astype(int)
 
-# Filter Mutlak: Membentuk tabel khusus Region 1 sesuai tujuan utama Anda
+# Filter Utama: Pastikan penulisan sesuai dengan hasil inspeksi di atas
 df_proc = df_proc[df_proc[region_col].astype(str).str.upper().str.strip() == "REGION 1"]
 
 # Handle string kosong / NaN
