@@ -117,19 +117,21 @@ if selected_cust_name != "All Outlets":
 if selected_dist_cust != "All ID APL/PPG":
     df_matrix = df_matrix[df_matrix[dist_cust_col] == selected_dist_cust]
 
-# ─── LOGIKA PENENTUAN 4 BULAN BERJALAN ───────────────────────────────────────
+# ─── FIX LOGIKA: PENENTUAN URUTAN BULAN BERJALAN YANG PRECIS ────────────────
 month_names_map = {
     1:"Jan", 2:"Feb", 3:"Mar", 4:"Apr", 5:"Mei", 6:"Jun",
     7:"Jul", 8:"Agu", 9:"Sep", 10:"Okt", 11:"Nov", 12:"Des"
 }
 
+# Membuat urutan kronologis dari yang paling lampau ke bulan terpilih
 target_months_indices = []
-for i in range(3, -1, -1):
+for i in [3, 2, 1, 0]:
     m = selected_month - i
     if m <= 0:
         m += 12 
     target_months_indices.append(m)
 
+# Sekarang pemetaan urutan elemen dijamin tepat berurutan (Maret, April, Mei, Juni)
 m_prev3, m_prev2, m_prev1, m_current = target_months_indices
 
 col_name_prev3 = f"{month_names_map[m_prev3]} {selected_year}"
@@ -141,7 +143,6 @@ avg_col_name = f"AVG QTY 3M ({month_names_map[m_prev3]}-{month_names_map[m_prev1
 df_matrix_4m = df_matrix[df_matrix[month_col].isin(target_months_indices)].copy()
 
 # ─── RENDER TABEL UTAMA ──────────────────────────────────────────────────────
-# Karena tabel baru membawa info target, indikator kesiapan bernilai True selama df_proc tersedia
 msa_ready = True 
 
 if not df_matrix_4m.empty or msa_ready:
@@ -161,7 +162,7 @@ if not df_matrix_4m.empty or msa_ready:
         if m_idx not in pivot_qty.columns:
             pivot_qty[m_idx] = 0.0
 
-    # 2. BERSIH & AMAN: Suntikkan SKU MSA yang tidak memiliki transaksi kuantiti langsung dari 1 tabel terpadu
+    # Suntikkan SKU MSA yang tidak memiliki transaksi kuantiti langsung dari tabel terpadu
     df_targets = df_matrix[df_matrix[msa_listing_col] == 1]
     
     existing_skus = pivot_qty[sku_col].unique() if not pivot_qty.empty else []
@@ -173,7 +174,6 @@ if not df_matrix_4m.empty or msa_ready:
             match_cat_series = df_targets[df_targets[sku_col] == m_sku][category_col]
             match_cat = str(match_cat_series.iloc[0]).strip().upper() if not match_cat_series.empty else "WOUND"
             
-            # PROTEKSI FILTER KATEGORI
             if selected_category != "All Categories" and match_cat != selected_category:
                 continue
                 
@@ -192,7 +192,7 @@ if not df_matrix_4m.empty or msa_ready:
     final_view_cols = [sku_col, category_col, avg_col_name, m_prev3, m_prev2, m_prev1, m_current]
     pivot_qty = pivot_qty.reindex(columns=final_view_cols, fill_value=0.0)
     
-    # Tambahkan tanda centang Target MSA secara instan tanpa query luar
+    # Tambahkan tanda centang Target MSA
     pivot_qty['Target MSA'] = "❌"
     for idx, row in pivot_qty.iterrows():
         current_sku = row[sku_col]
@@ -200,7 +200,7 @@ if not df_matrix_4m.empty or msa_ready:
         if not is_listed.empty:
             pivot_qty.at[idx, 'Target MSA'] = "✅"
 
-    # 🔥 LOGIKA SINKRONISASI BARIS TOTAL RUPIAH:
+    # 🔥 SINKRONISASI BARIS TOTAL RUPIAH:
     valid_skus_list = pivot_qty[sku_col].unique()
     df_matrix_valid = df_matrix_4m[df_matrix_4m[sku_col].isin(valid_skus_list)]
     
