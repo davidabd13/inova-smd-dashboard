@@ -13,12 +13,11 @@ PRIMARY     = "#FF6200"  # Betadine Orange
 SECONDARY   = "#002F6C"  # Deep Corporate Blue
 LIGHT_GRAY  = "#F8FAFC"  # Clean card backgrounds
 WHITE       = "#FFFFFF"
-DARK_GRAY   = "#1E293B"  # Tambahan warna untuk placeholder CSS
-SUCCESS     = "#22C55E"  # Tambahan warna untuk placeholder CSS
-DANGER      = "#EF4444"  # Tambahan warna untuk placeholder CSS
-WARNING     = "#F59E0B"  # Tambahan warna untuk placeholder CSS
+DARK_GRAY   = "#1E293B"  
+SUCCESS     = "#22C55E"  
+DANGER      = "#EF4444"  
+WARNING     = "#F59E0B"  
 
-# Mapping opsional, jika nama kolom di DB sudah sesuai legasi, program utama akan otomatis mencocokkannya
 MAP_SKU_DISPLAY = {
     "sku_name": "PRODUCT SKU NAME",
     "category": "CATEGORY"
@@ -39,11 +38,11 @@ def init_supabase() -> Client:
         st.error(f"❌ Gagal inisialisasi arsitektur database: {str(e)}")
         return None
 
-@st.cache_data(ttl=1800)  # Simpan di cache selama 30 menit demi efisiensi RAM
+@st.cache_data(ttl=1800)  
 def load_data_all(worksheet_name: str) -> pd.DataFrame:
     """
-    Menarik seluruh data dari Supabase tanpa terpotong batas limit (Mendukung >100.000 baris)
-    menggunakan teknik urutan range pagination langsung dari cloud database (Akurat & Real-time).
+    Menarik seluruh data dari Supabase dengan Pagination yang dikunci urutannya 
+    agar data tidak ganda atau terlewat di setiap batch penarikan.
     """
     supabase = init_supabase()
     if not supabase:
@@ -68,9 +67,11 @@ def load_data_all(worksheet_name: str) -> pd.DataFrame:
         progress_bar = st.progress(0, text="Mengunduh data terintegrasi dari Supabase...")
         
         while True:
+            # KOREKSI UTAMA: Mengunci urutan pencarian berdasarkan baris bawaan database agar pagination tidak bocor
             response = supabase.table(target_table)\
                                .select("*")\
                                .range(start_row, start_row + page_size - 1)\
+                               .order("id", desc=False)\
                                .execute()
             
             batch_data = response.data
@@ -99,7 +100,6 @@ def load_data_all(worksheet_name: str) -> pd.DataFrame:
                 df.drop(columns=[ts_col], inplace=True)
                 
         if worksheet_name == "sellinbysku":
-            # Ganti kolom yang berpotensi bentrok menggunakan mapping teraman
             for col_db, col_display in MAP_SKU_DISPLAY.items():
                 if col_db in df.columns:
                     df.rename(columns={col_db: col_display}, inplace=True)
@@ -111,7 +111,7 @@ def load_data_all(worksheet_name: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 def inject_css():
-    """Menyuntikkan gaya visual Light-Mode dari assets/styles.css dengan mem-parsing token placeholder warna."""
+    """Menyuntikkan gaya visual Light-Mode."""
     current_dir = os.path.dirname(os.path.abspath(__file__))
     css_path = os.path.join(current_dir, "assets", "styles.css")
     
@@ -119,16 +119,13 @@ def inject_css():
         try:
             with open(css_path, "r") as f:
                 css = f.read()
-            
-            # Mengganti placeholder teks di styles.css menjadi Hex warna asli sebelum disuntikkan
-            css = css.replace("__PRIMARY__", PRIMARY)
-            css = css.replace("__SECONDARY__", SECONDARY)
-            css = css.replace("__WHITE__", WHITE)
-            css = css.replace("__DARK_GRAY__", DARK_GRAY)
-            css = css.replace("__SUCCESS__", SUCCESS)
-            css = css.replace("__DANGER__", DANGER)
-            css = css.replace("__WARNING__", WARNING)
-            
+            css = css.replace("__PRIMARY__", PRIMARY)\
+                     .replace("__SECONDARY__", SECONDARY)\
+                     .replace("__WHITE__", WHITE)\
+                     .replace("__DARK_GRAY__", DARK_GRAY)\
+                     .replace("__SUCCESS__", SUCCESS)\
+                     .replace("__DANGER__", DANGER)\
+                     .replace("__WARNING__", WARNING)
             st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
             return
         except Exception:

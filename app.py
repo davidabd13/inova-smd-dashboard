@@ -68,15 +68,15 @@ df_proc[value_metric_col] = pd.to_numeric(df_proc[value_metric_col], errors='coe
 df_proc[qty_metric_col] = pd.to_numeric(df_proc[qty_metric_col], errors='coerce').fillna(0.0)
 df_proc[msa_listing_col] = pd.to_numeric(df_proc[msa_listing_col], errors='coerce').fillna(0).astype(int)
 
-# Filter Mutlak Awal Regional
+# Filter Mutlak Awal Regional (Dikunci Sejak Awal)
 df_proc = df_proc[df_proc[region_col].astype(str).str.upper().str.strip() == "REGION 1"]
 
 # Handle string kosong / NaN
-for col in [sku_col, cust_code_col, cust_name_col, dist_cust_col]:
+for col in [sku_col, cust_code_col, cust_name_col, dist_cust_col, channel_l3_col]:
     df_proc[col] = df_proc[col].fillna("UNASSIGNED").astype(str).str.strip()
 df_proc[category_col] = df_proc[category_col].fillna("WOUND").astype(str).str.strip().str.upper()
 
-# Kunci awal string penentu dimensi waktu (YYYY_MM) untuk filter dinamis
+# Penentu Dimensi Waktu Unik (YYYY_MM)
 df_proc['PERIOD_KEY'] = df_proc[year_col].astype(str) + "_" + df_proc[month_col].astype(str).str.zfill(2)
 
 # ─── MAIN FILTER PANEL ───────────────────────────────────────────────────────
@@ -108,7 +108,7 @@ with col6:
     unique_dist = ["All ID APL/PPG"] + sorted(list(df_proc[dist_cust_col].unique()))
     selected_dist_cust = st.selectbox("🆔 ID APL/PPG", unique_dist, index=0)
 
-# ─── GENERATE LOOKBACK TIMELINE (MENDUKUNG LINTAS TAHUN SECARA DINAMIS) ──────
+# ─── GENERATE LOOKBACK TIMELINE ──────────────────────────────────────────────
 month_names_map = {
     1:"Jan", 2:"Feb", 3:"Mar", 4:"Apr", 5:"Mei", 6:"Jun",
     7:"Jul", 8:"Agu", 9:"Sep", 10:"Okt", 11:"Nov", 12:"Des"
@@ -138,7 +138,6 @@ k_current = f"{y_current}_{str(m_current).zfill(2)}"
 target_keys = [k_prev3, k_prev2, k_prev1, k_current]
 
 # ─── PROSES FILTERING DATA BERTAHAP ──────────────────────────────────────────
-# Filter data berdasarkan 4 rentang bulan target (mengabaikan restriksi tahun tunggal)
 df_filtered = df_proc[df_proc['PERIOD_KEY'].isin(target_keys)].copy()
 
 if selected_category != "All Categories":
@@ -150,14 +149,15 @@ if selected_cust_name != "All Outlets":
 if selected_dist_cust != "All ID APL/PPG":
     df_filtered = df_filtered[df_filtered[dist_cust_col] == selected_dist_cust]
 
-# Ambil data target MSA khusus bulan berjalan
+# Ambil acuan data target MSA khusus bulan berjalan (Current Month)
 df_targets = df_filtered[(df_filtered['PERIOD_KEY'] == k_current) & (df_filtered[msa_listing_col] == 1)]
 
 # ─── RENDER TABEL UTAMA ──────────────────────────────────────────────────────
 if not df_filtered.empty or not df_targets.empty:
     
+    # KOREKSI UTAMA: Masukkan channel_l3_col ke index pivot agar agregasi data presisi sesuai database asli
     pivot_qty = df_filtered.pivot_table(
-        index=[sku_col, category_col],
+        index=[sku_col, category_col, channel_l3_col],
         columns='PERIOD_KEY',
         values=qty_metric_col,
         aggfunc='sum',
@@ -168,47 +168,50 @@ if not df_filtered.empty or not df_targets.empty:
         if k not in pivot_qty.columns:
             pivot_qty[k] = 0.0
 
-    # Ambil set unik target MSA yang valid berdasarkan filter berjalan
-    msa_skus_set = set(df_targets[sku_col].unique()) if not df_targets.empty else set()
+    # Menghubungkan mapping Target MSA berdasarkan kombinasi unik SKU + Channel Level 3
+    # Menggunakan fungsi .max() untuk mengabaikan angka 0 jika ditemukan angka 1 (Menang Centang)
+    target_msa_map = df_filtered[df_filtered['PERIOD_KEY'] == k_current].groupby(
+        [sku_col, channel_l3_col]
+    )[msa_listing_col].max().to_dict()
     
     # Injeksi target SKU MSA yang belum memiliki transaksi penjualan aktual
-    existing_skus = set(pivot_qty[sku_col].unique()) if not pivot_qty.empty else set()
-    missing_skus = msa_skus_set - existing_skus
-    
-    if len(missing_skus) > 0:
-        new_rows = []
-        for m_sku in missing_skus:
-            match_cat_series = df_targets[df_targets[sku_col] == m_sku][category_col]
-            match_cat = str(match_cat_series.iloc[0]).strip().upper() if not match_cat_series.empty else "WOUND"
+    if not df_targets.empty:
+        df_unique_targets = df_targets.drop_duplicates(subset=[sku_col, channel_l3_col])
+        for _, t_row in df_unique_targets.iterrows():
+            m_sku = t_row[sku_col]
+            m_cat = t_row[category_col]
+            m_chan = t_row[channel_l3_col]
             
-            row_data = {sku_col: m_sku, category_col: match_cat}
-            for k in target_keys:
-                row_data[k] = 0.0
-            new_rows.append(row_data)
-            
-        if new_rows:
-            pivot_qty = pd.concat([pivot_qty, pd.DataFrame(new_rows)], ignore_index=True)
+            # Cek apakah kombinasi dimensi ini sudah ada di tabel pivot aktual
+            exists = not pivot_qty[(pivot_qty[sku_col] == m_sku) & (pivot_qty[channel_l3_col] == m_chan)].empty
+            if not exists:
+                row_data = {sku_col: m_sku, category_col: m_cat, channel_l3_col: m_chan}
+                for k in target_keys:
+                    row_data[k] = 0.0
+                pivot_qty = pd.concat([pivot_qty, pd.DataFrame([row_data])], ignore_index=True)
 
     # Menghitung Rata-rata 3 Bulan ke Belakang (Sebelum Current Month)
     pivot_qty[avg_col_name] = pivot_qty[[k_prev3, k_prev2, k_prev1]].mean(axis=1).apply(lambda x: math.ceil(x))
 
-    # Re-ordering susunan kolom tabel utama
-    final_view_cols = [sku_col, category_col, avg_col_name, k_prev3, k_prev2, k_prev1, k_current]
+    # Re-ordering susunan kolom tabel utama beserta penambahan kolom Channel Level 3
+    final_view_cols = [sku_col, category_col, channel_l3_col, avg_col_name, k_prev3, k_prev2, k_prev1, k_current]
     pivot_qty = pivot_qty.reindex(columns=final_view_cols, fill_value=0.0)
     
-    # Kolom Validasi Target Kepatuhan MSA paling kanan
-    pivot_qty['TARGET MSA'] = pivot_qty[sku_col].apply(lambda x: "✅" if x in msa_skus_set else "❌")
+    # Kolom Validasi Target Kepatuhan MSA mengacu mutlak pada channel_level_3
+    pivot_qty['TARGET MSA'] = pivot_qty.apply(
+        lambda r: "✅" if target_msa_map.get((r[sku_col], r[channel_l3_col]), 0) == 1 else "❌", axis=1
+    )
 
-    # Kalkulasi Akurat Baris Total Summary Value (IDR) Berdasarkan Data Terfilter
+    # Kalkulasi Akurat Baris Total Summary Value (IDR) Berdasarkan Seluruh Data Terfilter
     val_m3 = df_filtered[df_filtered['PERIOD_KEY'] == k_prev3][value_metric_col].sum()
     val_m4 = df_filtered[df_filtered['PERIOD_KEY'] == k_prev2][value_metric_col].sum()
     val_m5 = df_filtered[df_filtered['PERIOD_KEY'] == k_prev1][value_metric_col].sum()
     val_m6 = df_filtered[df_filtered['PERIOD_KEY'] == k_current][value_metric_col].sum()
     avg_val_3m = math.ceil((val_m3 + val_m4 + val_m5) / 3)
 
-    # Rename Kolom untuk representasi UI
+    # Rename Kolom untuk representasi UI agar rapi
     pivot_qty.columns = [
-        "PRODUCT SKU NAME", "CATEGORY", avg_col_name, 
+        "PRODUCT SKU NAME", "CATEGORY", "CHANNEL LEVEL 3", avg_col_name, 
         col_name_prev3, col_name_prev2, col_name_prev1, col_name_current, 
         "TARGET MSA"
     ]
@@ -218,6 +221,7 @@ if not df_filtered.empty or not df_targets.empty:
     total_row_dict = {
         "PRODUCT SKU NAME": "TOTAL SUMMARY",
         "CATEGORY": "ALL VALUE (IDR)",
+        "CHANNEL LEVEL 3": "",
         avg_col_name: avg_val_3m,
         col_name_prev3: val_m3,
         col_name_prev2: val_m4,
@@ -283,8 +287,8 @@ if not df_filtered.empty or not df_targets.empty:
     st.markdown(
         f"""
         <style>
-            div[data-testid="stDataFrame"] table {{ background-color: #FFFFFF !important; color: #1E293B !important; }}
-            div[data-testid="stDataFrame"] th {{ background-color: {SECONDARY} !important; color: #FFFFFF !important; font-weight: 700 !important; }}
+            div[data-testid=\"stDataFrame\"] table {{ background-color: #FFFFFF !important; color: #1E293B !important; }}
+            div[data-testid=\"stDataFrame\"] th {{ background-color: {SECONDARY} !important; color: #FFFFFF !important; font-weight: 700 !important; }}
         </style>
         """, 
         unsafe_allow_html=True
