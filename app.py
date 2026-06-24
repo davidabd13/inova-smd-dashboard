@@ -51,7 +51,7 @@ region_col = find_column_safely(["INDO5_TEAM_SPV_REGION", "INDO5_TO", "REGION", 
 year_col = find_column_safely(["YEAR", "YEAR_NUM", "TAHUN", "year"], "YEAR")
 month_col = find_column_safely(["MONTH", "MONTH_NUM", "BULAN", "month"], "MONTH")
 sku_col = find_column_safely(["inova_id_sku_name", "SKU NAME", "sku_name", "PRODUCT SKU NAME"], "PRODUCT SKU NAME")
-category_col = find_column_safely(["CATEGORY", "KATEGORI", "category", "PRODUCT CATEGORY"], "CATEGORY")
+smd_col = find_column_safely(["inova_smd_name", "SMD NAME", "smd_name", "NAMA SMD"], "inova_smd_name")
 value_metric_col = find_column_safely(["SUM OF VALUE", "VALUE", "value", "ACTUAL VALUE", "sum_of_value"], "Sum of Value")
 qty_metric_col = find_column_safely(["SUM OF QTY", "QTY", "qty", "ACTUAL QTY", "sum_of_qty"], "Sum of Qty")
 
@@ -72,9 +72,9 @@ df_proc[msa_listing_col] = pd.to_numeric(df_proc[msa_listing_col], errors='coerc
 df_proc = df_proc[df_proc[region_col].astype(str).str.upper().str.strip() == "REGION 1"]
 
 # Handle string kosong / NaN
-for col in [sku_col, cust_code_col, cust_name_col, dist_cust_col, channel_l3_col]:
+for col in [sku_col, cust_code_col, cust_name_col, dist_cust_col, channel_l3_col, smd_col]:
     df_proc[col] = df_proc[col].fillna("UNASSIGNED").astype(str).str.strip()
-df_proc[category_col] = df_proc[category_col].fillna("WOUND").astype(str).str.strip().str.upper()
+df_proc[smd_col] = df_proc[smd_col].str.upper()
 
 # Penentu Dimensi Waktu Unik (YYYY_MM)
 df_proc['PERIOD_KEY'] = df_proc[year_col].astype(str) + "_" + df_proc[month_col].astype(str).str.zfill(2)
@@ -92,8 +92,8 @@ with col2:
     selected_month = st.selectbox("📆 Bulan Target Basis", available_months if available_months else [6], index=0)
 
 with col3:
-    available_categories = ["All Categories"] + sorted(list(df_proc[category_col].unique()))
-    selected_category = st.selectbox("📂 Filter Kategori Produk", available_categories, index=0)
+    available_smds = ["All SMD"] + sorted(list(df_proc[smd_col].unique()))
+    selected_smd = st.selectbox("👤 Filter Nama SMD", available_smds, index=0)
 
 col4, col5, col6 = st.columns(3)
 with col4:
@@ -140,8 +140,8 @@ target_keys = [k_prev3, k_prev2, k_prev1, k_current]
 # ─── PROSES FILTERING DATA BERTAHAP ──────────────────────────────────────────
 df_filtered = df_proc[df_proc['PERIOD_KEY'].isin(target_keys)].copy()
 
-if selected_category != "All Categories":
-    df_filtered = df_filtered[df_filtered[category_col] == selected_category]
+if selected_smd != "All SMD":
+    df_filtered = df_filtered[df_filtered[smd_col] == selected_smd]
 if selected_cust_code != "All iNova Codes":
     df_filtered = df_filtered[df_filtered[cust_code_col] == selected_cust_code]
 if selected_cust_name != "All Outlets":
@@ -157,7 +157,7 @@ if not df_filtered.empty or not df_targets.empty:
     
     # Logika Pivot tetap menggunakan channel_l3_col di background agar perhitungan presisi
     pivot_qty = df_filtered.pivot_table(
-        index=[sku_col, category_col, channel_l3_col],
+        index=[sku_col, smd_col, channel_l3_col],
         columns='PERIOD_KEY',
         values=qty_metric_col,
         aggfunc='sum',
@@ -176,12 +176,12 @@ if not df_filtered.empty or not df_targets.empty:
         df_unique_targets = df_targets.drop_duplicates(subset=[sku_col, channel_l3_col])
         for _, t_row in df_unique_targets.iterrows():
             m_sku = t_row[sku_col]
-            m_cat = t_row[category_col]
+            m_smd = t_row[smd_col]
             m_chan = t_row[channel_l3_col]
             
             exists = not pivot_qty[(pivot_qty[sku_col] == m_sku) & (pivot_qty[channel_l3_col] == m_chan)].empty
             if not exists:
-                row_data = {sku_col: m_sku, category_col: m_cat, channel_l3_col: m_chan}
+                row_data = {sku_col: m_sku, smd_col: m_smd, channel_l3_col: m_chan}
                 for k in target_keys:
                     row_data[k] = 0.0
                 pivot_qty = pd.concat([pivot_qty, pd.DataFrame([row_data])], ignore_index=True)
@@ -190,7 +190,7 @@ if not df_filtered.empty or not df_targets.empty:
     pivot_qty[avg_col_name] = pivot_qty[[k_prev3, k_prev2, k_prev1]].mean(axis=1).apply(lambda x: math.ceil(x))
 
     # Re-ordering susunan kolom tabel utama
-    final_view_cols = [sku_col, category_col, channel_l3_col, avg_col_name, k_prev3, k_prev2, k_prev1, k_current]
+    final_view_cols = [sku_col, smd_col, channel_l3_col, avg_col_name, k_prev3, k_prev2, k_prev1, k_current]
     pivot_qty = pivot_qty.reindex(columns=final_view_cols, fill_value=0.0)
     
     # Kolom Validasi Target Kepatuhan MSA mengacu pada channel_level_3
@@ -198,9 +198,9 @@ if not df_filtered.empty or not df_targets.empty:
         lambda r: "✅" if target_msa_map.get((r[sku_col], r[channel_l3_col]), 0) == 1 else "❌", axis=1
     )
 
-    # Lakukan grouping final di tingkat SKU & Kategori untuk menghilangkan dimensi Channel dari visualisasi
+    # Lakukan grouping final di tingkat SKU & SMD untuk menghilangkan dimensi Channel dari visualisasi
     # Gunakan aggfunc='sum' untuk Qty dan 'max' untuk status Target MSA (jika ada satu yang centang, maka baris gabungan tersebut centang)
-    pivot_qty = pivot_qty.groupby([sku_col, category_col]).agg({
+    pivot_qty = pivot_qty.groupby([sku_col, smd_col]).agg({
         avg_col_name: 'sum',
         k_prev3: 'sum',
         k_prev2: 'sum',
@@ -217,9 +217,9 @@ if not df_filtered.empty or not df_targets.empty:
     avg_val_3m = math.ceil((val_m3 + val_m4 + val_m5) / 3)
 
     # Susun ulang kolom UI tanpa menyertakan Channel Level 3
-    pivot_qty = pivot_qty[[sku_col, category_col, avg_col_name, k_prev3, k_prev2, k_prev1, k_current, 'TARGET MSA']]
+    pivot_qty = pivot_qty[[sku_col, smd_col, avg_col_name, k_prev3, k_prev2, k_prev1, k_current, 'TARGET MSA']]
     pivot_qty.columns = [
-        "PRODUCT SKU NAME", "CATEGORY", avg_col_name, 
+        "PRODUCT SKU NAME", "NAMA SMD", avg_col_name, 
         col_name_prev3, col_name_prev2, col_name_prev1, col_name_current, 
         "TARGET MSA"
     ]
@@ -228,7 +228,7 @@ if not df_filtered.empty or not df_targets.empty:
 
     total_row_dict = {
         "PRODUCT SKU NAME": "TOTAL SUMMARY",
-        "CATEGORY": "ALL VALUE (IDR)",
+        "NAMA SMD": "ALL VALUE (IDR)",
         avg_col_name: avg_val_3m,
         col_name_prev3: val_m3,
         col_name_prev2: val_m4,
