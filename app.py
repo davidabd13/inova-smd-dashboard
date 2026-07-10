@@ -211,7 +211,6 @@ if not df_filtered.empty or not df_targets.empty:
     )
 
     # Lakukan grouping final di tingkat SKU & SMD untuk menghilangkan dimensi Channel dari visualisasi
-    # Gunakan aggfunc='sum' untuk Qty dan 'max' untuk status Target MSA
     pivot_qty = pivot_qty.groupby([sku_col, smd_col]).agg({
         avg_col_name: 'sum',
         k_prev3: 'sum',
@@ -256,7 +255,7 @@ if not df_filtered.empty or not df_targets.empty:
     df_upper_raw = df_upper_raw.sort_values(by=["TARGET MSA", col_name_current], ascending=[False, False])
     df_lower_raw = df_lower_raw.sort_values(by=["TARGET MSA", col_name_current], ascending=[False, False])
 
-    # Row total summary khusus di letakkan di akhir tabel bawah
+    # Row total summary dipindahkan ke akhir tabel atas (Priority SKU)
     total_row_dict = {
         "PRODUCT SKU NAME": "TOTAL SUMMARY (ALL VALUE IDR)",
         avg_col_name: avg_val_3m,
@@ -267,8 +266,8 @@ if not df_filtered.empty or not df_targets.empty:
         "TARGET MSA": ""
     }
     
-    df_upper_final = df_upper_raw.reset_index(drop=True)
-    df_lower_final = pd.concat([df_lower_raw, pd.DataFrame([total_row_dict])], ignore_index=True)
+    df_upper_final = pd.concat([df_upper_raw, pd.DataFrame([total_row_dict])], ignore_index=True)
+    df_lower_final = df_lower_raw.reset_index(drop=True)
 
     # ─── LOGIKA FORMATTING KHUSUS TAMPILAN WEB (HTML) ────────────────────────
     def format_cells_with_rules(df, is_table_with_total=False):
@@ -330,20 +329,20 @@ if not df_filtered.empty or not df_targets.empty:
         unsafe_allow_html=True
     )
     
-    # Render Tabel Atas (Target SKU Prioritas)
+    # Render Tabel Atas (Target SKU Prioritas) -> Dilengkapi dengan Total Summary Row
     st.markdown("### 📋 Tabel Kinerja Target SKU Prioritas")
     if not df_upper_final.empty:
-        df_display_upper = format_cells_with_rules(df_upper_final, is_table_with_total=False)
+        df_display_upper = format_cells_with_rules(df_upper_final, is_table_with_total=True)
         st.write(df_display_upper.to_html(escape=False, index=False), unsafe_allow_html=True)
     else:
         st.info("Tidak ada data untuk SKU prioritas pada filter ini.")
         
     st.write("<br>", unsafe_allow_html=True)
     
-    # Render Tabel Bawah (SKU Lainnya)
+    # Render Tabel Bawah (SKU Lainnya) -> Hanya data biasa tanpa Total Summary Row
     st.markdown("### 🔍 Tabel Kinerja SKU Lainnya")
     if not df_lower_final.empty:
-        df_display_lower = format_cells_with_rules(df_lower_final, is_table_with_total=True)
+        df_display_lower = format_cells_with_rules(df_lower_final, is_table_with_total=False)
         st.write(df_display_lower.to_html(escape=False, index=False), unsafe_allow_html=True)
     else:
         st.info("Tidak ada data untuk SKU lainnya pada filter ini.")
