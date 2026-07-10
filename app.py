@@ -152,6 +152,18 @@ if selected_dist_cust != "All ID APL/PPG":
 # Ambil acuan data target MSA khusus bulan berjalan
 df_targets = df_filtered[(df_filtered['PERIOD_KEY'] == k_current) & (df_filtered[msa_listing_col] == 1)]
 
+# Definisi List SKU Prioritas Atas
+priority_skus = [
+    "BETADINE SOLUTION 5ML",
+    "BETADINE SOLUTION 15ML",
+    "BETADINE SKIN CLEANSER 100ML",
+    "BETADINE OINTMENT 5GR",
+    "BETADINE FEMININE HYGIENE 60ML",
+    "BETADINE OBAT KUMUR 100ML",
+    "BETADINE CLEAR SPRAY 30 ML",
+    "BETADINE OBAT KUMUR 190ML"
+]
+
 # ─── RENDER TABEL UTAMA ──────────────────────────────────────────────────────
 if not df_filtered.empty or not df_targets.empty:
     
@@ -199,7 +211,7 @@ if not df_filtered.empty or not df_targets.empty:
     )
 
     # Lakukan grouping final di tingkat SKU & SMD untuk menghilangkan dimensi Channel dari visualisasi
-    # Gunakan aggfunc='sum' untuk Qty dan 'max' untuk status Target MSA (jika ada satu yang centang, maka baris gabungan tersebut centang)
+    # Gunakan aggfunc='sum' untuk Qty dan 'max' untuk status Target MSA
     pivot_qty = pivot_qty.groupby([sku_col, smd_col]).agg({
         avg_col_name: 'sum',
         k_prev3: 'sum',
@@ -216,19 +228,37 @@ if not df_filtered.empty or not df_targets.empty:
     val_m6 = df_filtered[df_filtered['PERIOD_KEY'] == k_current][value_metric_col].sum()
     avg_val_3m = math.ceil((val_m3 + val_m4 + val_m5) / 3)
 
-    # Susun ulang kolom UI tanpa menyertakan Channel Level 3
-    pivot_qty = pivot_qty[[sku_col, smd_col, avg_col_name, k_prev3, k_prev2, k_prev1, k_current, 'TARGET MSA']]
-    pivot_qty.columns = [
-        "PRODUCT SKU NAME", "NAMA SMD", avg_col_name, 
+    # Lakukan grouping sekali lagi ke level SKU untuk menghilangkan kolom SMD dari Visualisasi
+    pivot_qty_no_smd = pivot_qty.groupby([sku_col]).agg({
+        avg_col_name: 'sum',
+        k_prev3: 'sum',
+        k_prev2: 'sum',
+        k_prev1: 'sum',
+        k_current: 'sum',
+        'TARGET MSA': lambda x: "✅" if "✅" in list(x) else "❌"
+    }).reset_index()
+
+    # Susun ulang kolom UI tanpa menyertakan Nama SMD & Channel Level 3
+    pivot_qty_no_smd = pivot_qty_no_smd[[sku_col, avg_col_name, k_prev3, k_prev2, k_prev1, k_current, 'TARGET MSA']]
+    pivot_qty_no_smd.columns = [
+        "PRODUCT SKU NAME", avg_col_name, 
         col_name_prev3, col_name_prev2, col_name_prev1, col_name_current, 
         "TARGET MSA"
     ]
 
-    pivot_qty = pivot_qty.sort_values(by=["TARGET MSA", col_name_current], ascending=[False, False])
+    # Pemisahan Menjadi 2 DataFrame Berdasarkan List SKU Prioritas
+    is_priority = pivot_qty_no_smd["PRODUCT SKU NAME"].str.upper().str.strip().isin([sku.upper().strip() for sku in priority_skus])
+    
+    df_upper_raw = pivot_qty_no_smd[is_priority].copy()
+    df_lower_raw = pivot_qty_no_smd[~is_priority].copy()
 
+    # Sorting masing-masing DataFrame
+    df_upper_raw = df_upper_raw.sort_values(by=["TARGET MSA", col_name_current], ascending=[False, False])
+    df_lower_raw = df_lower_raw.sort_values(by=["TARGET MSA", col_name_current], ascending=[False, False])
+
+    # Row total summary khusus di letakkan di akhir tabel bawah
     total_row_dict = {
-        "PRODUCT SKU NAME": "TOTAL SUMMARY",
-        "NAMA SMD": "ALL VALUE (IDR)",
+        "PRODUCT SKU NAME": "TOTAL SUMMARY (ALL VALUE IDR)",
         avg_col_name: avg_val_3m,
         col_name_prev3: val_m3,
         col_name_prev2: val_m4,
@@ -237,10 +267,11 @@ if not df_filtered.empty or not df_targets.empty:
         "TARGET MSA": ""
     }
     
-    df_pivot_final = pd.concat([pivot_qty, pd.DataFrame([total_row_dict])], ignore_index=True)
+    df_upper_final = df_upper_raw.reset_index(drop=True)
+    df_lower_final = pd.concat([df_lower_raw, pd.DataFrame([total_row_dict])], ignore_index=True)
 
     # ─── LOGIKA FORMATTING KHUSUS TAMPILAN WEB (HTML) ────────────────────────
-    def format_cells_with_rules(df):
+    def format_cells_with_rules(df, is_table_with_total=False):
         formatted_df = df.copy()
         last_row_idx = df.index[-1]
         loop_cols = [avg_col_name, col_name_prev3, col_name_prev2, col_name_prev1, col_name_current]
@@ -249,7 +280,7 @@ if not df_filtered.empty or not df_targets.empty:
             formatted_df[col] = formatted_df[col].astype(object)
         
         for idx, row in df.iterrows():
-            if idx == last_row_idx:
+            if is_table_with_total and idx == last_row_idx:
                 for col in loop_cols:
                     formatted_df.at[idx, col] = f"<b>Rp {row[col]:,.0f}</b>"
             else:
@@ -289,8 +320,6 @@ if not df_filtered.empty or not df_targets.empty:
                     
         return formatted_df
 
-    df_display = format_cells_with_rules(df_pivot_final)
-
     st.markdown(
         f"""
         <style>
@@ -301,14 +330,33 @@ if not df_filtered.empty or not df_targets.empty:
         unsafe_allow_html=True
     )
     
-    st.write(df_display.to_html(escape=False, index=False), unsafe_allow_html=True)
+    # Render Tabel Atas (Target SKU Prioritas)
+    st.markdown("### 📋 Tabel Kinerja Target SKU Prioritas")
+    if not df_upper_final.empty:
+        df_display_upper = format_cells_with_rules(df_upper_final, is_table_with_total=False)
+        st.write(df_display_upper.to_html(escape=False, index=False), unsafe_allow_html=True)
+    else:
+        st.info("Tidak ada data untuk SKU prioritas pada filter ini.")
+        
     st.write("<br>", unsafe_allow_html=True)
     
+    # Render Tabel Bawah (SKU Lainnya)
+    st.markdown("### 🔍 Tabel Kinerja SKU Lainnya")
+    if not df_lower_final.empty:
+        df_display_lower = format_cells_with_rules(df_lower_final, is_table_with_total=True)
+        st.write(df_display_lower.to_html(escape=False, index=False), unsafe_allow_html=True)
+    else:
+        st.info("Tidak ada data untuk SKU lainnya pada filter ini.")
+        
+    st.write("<br>", unsafe_allow_html=True)
+    
+    # Download Button Section
     col_space, col_btn = st.columns([8, 2])
     with col_btn:
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df_pivot_final.to_excel(writer, index=False, sheet_name='3M_Sales_Matrix')
+            df_upper_final.to_excel(writer, index=False, sheet_name='Priority_SKU_Matrix')
+            df_lower_final.to_excel(writer, index=False, sheet_name='Other_SKU_Matrix')
         st.download_button(
             label="📥 Download Pivot Report (Excel)",
             data=output.getvalue(),
