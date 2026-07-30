@@ -23,6 +23,44 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+# ─── LOGIN ────────────────────────────────────
+
+USERS = {
+    "region1": "region1",
+    "region2": "region2",
+    "region3": "region3",
+    "region4": "region4",
+    "region5": "region5"
+}
+
+REGION_MAPPING = {
+    "region1": "REGION 1",
+    "region2": "REGION 2",
+    "region3": "REGION 3",
+    "region4": "REGION 4",
+    "region5": "REGION 5"
+}
+
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if not st.session_state.logged_in:
+
+    st.subheader("🔐 Login Dashboard")
+
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+
+    if st.button("Login"):
+        if username in USERS and USERS[username] == password:
+            st.session_state.logged_in = True
+            st.session_state.region = REGION_MAPPING[username]
+            st.rerun()
+        else:
+            st.error("Username atau password salah")
+
+    st.stop()
+
 # ─── INGESTION DATA VIA UTILS ────────────────────────────────────────────────
 @st.cache_data(ttl=3600)
 def get_cached_data():
@@ -69,7 +107,7 @@ df_proc[qty_metric_col] = pd.to_numeric(df_proc[qty_metric_col], errors='coerce'
 df_proc[msa_listing_col] = pd.to_numeric(df_proc[msa_listing_col], errors='coerce').fillna(0).astype(int)
 
 # Filter Mutlak Awal Regional (Dikunci Sejak Awal)
-df_proc = df_proc[df_proc[region_col].astype(str).str.upper().str.strip() == "REGION 1"]
+df_proc = df_proc[df_proc[region_col].astype(str).str.upper().str.strip() == st.session_state.region]
 
 # Handle string kosong / NaN
 for col in [sku_col, cust_code_col, cust_name_col, dist_cust_col, channel_l3_col, smd_col]:
