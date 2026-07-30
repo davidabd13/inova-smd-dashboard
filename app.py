@@ -118,7 +118,7 @@ df_proc[smd_col] = df_proc[smd_col].str.upper()
 df_proc['PERIOD_KEY'] = df_proc[year_col].astype(str) + "_" + df_proc[month_col].astype(str).str.zfill(2)
 
 # ─── MAIN FILTER PANEL ───────────────────────────────────────────────────────
-st.subheader("⚙️ Panel Kontrol & Filter Analisis (Region 1)")
+st.subheader("⚙️ Panel Kontrol & Filter Analisis")
 
 col1, col2, col3 = st.columns(3)
 with col1:
