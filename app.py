@@ -190,16 +190,15 @@ if selected_dist_cust != "All ID APL/PPG":
 # Ambil acuan data target MSA khusus bulan berjalan
 df_targets = df_filtered[(df_filtered['PERIOD_KEY'] == k_current) & (df_filtered[msa_listing_col] == 1)]
 
-# Definisi List SKU Prioritas Atas
 priority_skus = [
-    "BETADINE SOLUTION 5ML",
-    "BETADINE SOLUTION 15ML",
-    "BETADINE SKIN CLEANSER 100ML",
-    "BETADINE OINTMENT 5GR",
     "BETADINE FEMININE HYGIENE 60ML",
+    "BETADINE SKIN CLEANSER 100ML",
     "BETADINE OBAT KUMUR 100ML",
+    "BETADINE OBAT KUMUR 190ML",
+    "BETADINE SOLUTION 15ML",
+    "BETADINE SOLUTION 5ML",
     "BETADINE CLEAR SPRAY 30 ML",
-    "BETADINE OBAT KUMUR 190ML"
+    "BETADINE OINTMENT 5GR"
 ]
 
 # ─── RENDER TABEL UTAMA ──────────────────────────────────────────────────────
@@ -309,8 +308,16 @@ if not df_filtered.empty or not df_targets.empty:
         df_upper_raw = pd.concat([df_upper_raw, pd.DataFrame(missing_skus_data)], ignore_index=True)
     # ─────────────────────────────────────────────────────────────
 
-    # Sorting masing-masing DataFrame
-    df_upper_raw = df_upper_raw.sort_values(by=["TARGET MSA", col_name_current], ascending=[False, False])
+    # ─── LOGIKA URUTAN STATIS (Diubah Khusus Untuk df_upper_raw) ───
+    # Memaksa urutan SKU atas menggunakan tipe Categorical sesuai list priority_skus
+    df_upper_raw['PRODUCT SKU NAME'] = pd.Categorical(
+        df_upper_raw['PRODUCT SKU NAME'], 
+        categories=priority_skus, 
+        ordered=True
+    )
+    df_upper_raw = df_upper_raw.sort_values('PRODUCT SKU NAME')
+    
+    # Tabel bawah tetap diurutkan berdasarkan Target MSA & Nilai Tertinggi
     df_lower_raw = df_lower_raw.sort_values(by=["TARGET MSA", col_name_current], ascending=[False, False])
 
     # Row total summary dipindahkan ke akhir tabel atas (Priority SKU)
