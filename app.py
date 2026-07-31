@@ -289,6 +289,26 @@ if not df_filtered.empty or not df_targets.empty:
     df_upper_raw = pivot_qty_no_smd[is_priority].copy()
     df_lower_raw = pivot_qty_no_smd[~is_priority].copy()
 
+    # ─── LOGIKA STATIS JUMLAH BARIS SKU PRIORITAS (Tabel Atas) ───
+    existing_skus = df_upper_raw["PRODUCT SKU NAME"].str.upper().str.strip().tolist()
+    missing_skus_data = []
+    
+    for p_sku in priority_skus:
+        if p_sku.upper().strip() not in existing_skus:
+            missing_skus_data.append({
+                "PRODUCT SKU NAME": p_sku.upper().strip(),
+                avg_col_name: 0.0,
+                col_name_prev3: 0.0,
+                col_name_prev2: 0.0,
+                col_name_prev1: 0.0,
+                col_name_current: 0.0,
+                "TARGET MSA": "❌"
+            })
+            
+    if missing_skus_data:
+        df_upper_raw = pd.concat([df_upper_raw, pd.DataFrame(missing_skus_data)], ignore_index=True)
+    # ─────────────────────────────────────────────────────────────
+
     # Sorting masing-masing DataFrame
     df_upper_raw = df_upper_raw.sort_values(by=["TARGET MSA", col_name_current], ascending=[False, False])
     df_lower_raw = df_lower_raw.sort_values(by=["TARGET MSA", col_name_current], ascending=[False, False])
